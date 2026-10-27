@@ -35,5 +35,15 @@ Points d'attention :
 - Panoramax (photos de rue, licence ouverte) n'a aucune image autour du site de Vernouillet
   (octobre 2026) : les façades restent indicatives.
 
+Textures : matériaux photographiés de Poly Haven (`api.polyhaven.com`, fichiers
+`dl.polyhaven.org`), **licence CC0** (domaine public, sans mention obligatoire) : couleur, normales
+et `arm` (occlusion, rugosité, métal : la convention glTF), en 1k, avec leur taille réelle (champ
+`dimensions`) pour les poser à l'échelle. Choix des matériaux dans `config/materiaux.yaml` ; cache
+dans `outils/textures/` (ignoré par git). Sans réseau, les textures procédurales prennent le relais.
+
+Google Street View est exclu : ses conditions interdisent d'en tirer des textures ou des modèles
+3D, l'API est à clé et payante. Les façades réelles viendront de photos (les vôtres, ou Panoramax
+quand il couvre le site).
+
 Logiciels : Blender 4.5 LTS (GPL, téléchargé dans `outils/`), three.js 0.170 (MIT, CDN jsDelivr),
 gltfpack 0.24 (MIT, via `npx`).

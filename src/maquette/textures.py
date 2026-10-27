@@ -41,6 +41,7 @@ class Materiau:
     double_face: bool = False
     emission: float = 0.0
     lisse: bool = False
+    echelle: float = 1.0  # répétitions de la texture par unité d'UV (KHR_texture_transform)
 
     def en_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -485,6 +486,66 @@ def _panneau(nature: str, dossier: Path) -> str:
     return fichier
 
 
+Teinte = tuple[float, float, float]
+
+
+def _cle_photo(
+    nom: str, toits: dict[str, tuple[str, Teinte]], cfg: dict[str, Any]
+) -> tuple[str, Teinte | None]:
+    """Entrée de `config/materiaux.yaml` d'un matériau et la teinte qu'il vise."""
+    if nom in toits:
+        return f"couverture_{toits[nom][0]}", toits[nom][1]
+    variante = 0
+    cle = nom
+    if nom.startswith(("facade_enduit_", "facade_activite_", "facade_annexe_")):
+        morceaux = nom.split("_")
+        cle, variante = "_".join(morceaux[:2]), int(morceaux[2])
+    entree = cfg["materiaux"].get(cle)
+    if entree is None or not entree.get("teintes"):
+        return cle, None
+    r, g, b = entree["teintes"][variante % len(entree["teintes"])]
+    return cle, (r / 255, g / 255, b / 255)
+
+
+def _photographie(
+    nom: str, dossier: Path, toits: dict[str, tuple[str, Teinte]], bases: dict[str, Teinte]
+) -> Materiau | None:
+    """Matériau photographié (Poly Haven, CC0) si `config/materiaux.yaml` en prévoit un.
+
+    La texture est recolorée une fois vers la teinte la plus claire de son entrée (`bases`) ;
+    chaque matériau l'assombrit ensuite vers sa propre teinte par le facteur de couleur.
+    """
+    from maquette import bibliotheque
+
+    cfg = bibliotheque.configuration()
+    cle, teinte = _cle_photo(nom, toits, cfg)
+    entree = cfg["materiaux"].get(cle)
+    if entree is None:
+        return None
+    base = bases.get(cle)
+    ph = bibliotheque.photo(entree["id"], dossier, cfg, base, entree.get("taille"))
+    if ph is None:
+        return None
+    couleur = (1.0, 1.0, 1.0, 1.0)
+    if teinte is not None and base is not None:
+        # Rapport à la teinte de base visée (pas à la moyenne mesurée, faussée par l'écrêtage) :
+        # le grain et la teinte de l'image recolorée sont conservés.
+        r, g, b = (
+            float(np.clip(t / max(m, 1e-3), 0, 1)) for t, m in zip(teinte, base, strict=True)
+        )
+        couleur = (r, g, b, 1.0)
+    return Materiau(
+        nom,
+        couleur=couleur,
+        texture=ph.couleur,
+        orm=ph.arm,
+        normale=ph.normale,
+        echelle=float(entree["uv"]) / ph.taille,
+        double_face=nom.startswith(("facade_", "mur_cloture")),
+        lisse=nom.startswith("feuillage_"),
+    )
+
+
 def catalogue(
     noms: set[str],
     dossier: Path,
@@ -493,8 +554,24 @@ def catalogue(
 ) -> dict[str, Materiau]:
     """Définitions des matériaux utilisés ; `toits` : nom → (type de couverture, teinte)."""
     resultat: dict[str, Materiau] = {}
+    from maquette import bibliotheque
+
+    cfg_photos = bibliotheque.configuration()
+    bases: dict[str, Teinte] = {}
+    for nom in noms:
+        cle, teinte = _cle_photo(nom, toits, cfg_photos)
+        if teinte is not None:
+            ancienne = bases.get(cle, (0.0, 0.0, 0.0))
+            bases[cle] = (
+                max(ancienne[0], teinte[0]),
+                max(ancienne[1], teinte[1]),
+                max(ancienne[2], teinte[2]),
+            )
     for nom in sorted(noms):
-        if nom == "ortho":
+        photographie = _photographie(nom, dossier, toits, bases)
+        if photographie is not None:
+            resultat[nom] = photographie
+        elif nom == "ortho":
             resultat[nom] = Materiau(nom, texture=ortho, rugosite=0.9)
         elif nom.startswith("facade_"):
             resultat[nom] = facade(nom, dossier)

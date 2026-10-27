@@ -45,9 +45,22 @@ def materiau(nom, d):
     bsdf = nodes["Principled BSDF"]
     r, g, b, a = d["couleur"]
     facteur = (lineaire(r), lineaire(g), lineaire(b), 1.0)
+    # Échelle réelle des textures photographiées : exportée en KHR_texture_transform.
+    vecteur = None
+    if d.get("echelle", 1.0) != 1.0:
+        coordonnees = nodes.new("ShaderNodeTexCoord")
+        vecteur = nodes.new("ShaderNodeMapping")
+        vecteur.inputs["Scale"].default_value = (d["echelle"], d["echelle"], 1.0)
+        liens.new(coordonnees.outputs["UV"], vecteur.inputs["Vector"])
+
+    def brancher(noeud):
+        if vecteur is not None:
+            liens.new(vecteur.outputs["Vector"], noeud.inputs["Vector"])
+
     if d["texture"]:
         tex = nodes.new("ShaderNodeTexImage")
         tex.image = image(d["texture"])
+        brancher(tex)
         if facteur[:3] != (1.0, 1.0, 1.0):
             mix = nodes.new("ShaderNodeMix")
             mix.data_type = "RGBA"
@@ -63,6 +76,7 @@ def materiau(nom, d):
     if d["orm"]:
         orm = nodes.new("ShaderNodeTexImage")
         orm.image = image(d["orm"], True)
+        brancher(orm)
         sep = nodes.new("ShaderNodeSeparateColor")
         liens.new(orm.outputs["Color"], sep.inputs["Color"])
         liens.new(sep.outputs["Green"], bsdf.inputs["Roughness"])
@@ -73,6 +87,7 @@ def materiau(nom, d):
     if d["normale"]:
         nor = nodes.new("ShaderNodeTexImage")
         nor.image = image(d["normale"], True)
+        brancher(nor)
         carte = nodes.new("ShaderNodeNormalMap")
         liens.new(nor.outputs["Color"], carte.inputs["Color"])
         liens.new(carte.outputs["Normal"], bsdf.inputs["Normal"])

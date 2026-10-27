@@ -143,6 +143,7 @@
     <input type="range" id="heure" min="6" max="21" step="0.25" value="15"><span id="heure-texte">15 h</span>
   </div>
   <label><input type="checkbox" id="ombres" checked> Ombres portées</label>
+  <label id="ligne-occlusion"><input type="checkbox" id="occlusion" checked> Occlusion ambiante (recoins)</label>
 </details>
 
 <div id="aide" class="carte"></div>
@@ -162,6 +163,10 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 
 const INFOS = /*INFOS*/null;
 // Nom du fichier publié à côté de la page (un hébergeur peut imposer une extension).
@@ -194,8 +199,9 @@ const conteneur = $('#vue');
 const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
 renderer.setPixelRatio(basse ? 1 : Math.min(devicePixelRatio, tactile ? 1.5 : 2));
 renderer.setSize(innerWidth, innerHeight);
-renderer.toneMapping = THREE.AgXToneMapping;
-renderer.toneMappingExposure = 1.1;
+// Neutral : garde la saturation des matériaux (AgX délave les tuiles et la végétation).
+renderer.toneMapping = THREE.NeutralToneMapping;
+renderer.toneMappingExposure = 0.95;
 renderer.shadowMap.enabled = !basse;
 $('#ombres').checked = !basse;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -523,15 +529,30 @@ addEventListener('keydown', (e) => { if (e.code === 'Escape') { for (const t of 
 // Boucle --------------------------------------------------------------------------------
 changerMode('orbite');
 const horloge = new THREE.Clock();
+// Occlusion ambiante (GTAO) : assombrit pieds de murs, dessous de débords, recoins. Coûteuse :
+// sur ordinateur seulement, hors qualité basse.
+let composition = null;
+if (!tactile && !basse) {
+  composition = new EffectComposer(renderer);
+  composition.addPass(new RenderPass(scene, camera));
+  const occlusion = new GTAOPass(scene, camera, innerWidth, innerHeight);
+  occlusion.updateGtaoMaterial({ radius: 1.6, distanceExponent: 1.5, thickness: 1.5, scale: 1.2 });
+  occlusion.blendIntensity = 0.75;
+  composition.addPass(occlusion);
+  composition.addPass(new OutputPass());
+} else {
+  $('#ligne-occlusion').hidden = true;
+}
 renderer.setAnimationLoop(() => {
   const dt = Math.min(horloge.getDelta(), 0.1);
   if (mode === 'orbite') orbite.update(); else deplacer(dt);
-  renderer.render(scene, camera);
+  if (composition && $('#occlusion').checked) composition.render(dt); else renderer.render(scene, camera);
   etiquettes.render(scene, camera);
 });
 addEventListener('resize', () => {
   camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
   renderer.setSize(innerWidth, innerHeight); etiquettes.setSize(innerWidth, innerHeight);
+  composition?.setSize(innerWidth, innerHeight);
 });
 </script>
 </body>

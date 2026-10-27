@@ -1,0 +1,48 @@
+# Matériaux photographiés (Poly Haven, CC0). Pour chaque matériau de la maquette :
+# - id : identifiant Poly Haven ;
+# - uv : mètres par unité d'UV de la géométrie de ce matériau (convention du code) ;
+# - teintes : couleurs moyennes visées par variante ; la texture est colorisée (son grain,
+#   c'est-à-dire sa luminance, est gardé ; sa couleur d'origine ne compte plus qu'à 20 %).
+# Un matériau absent d'ici garde sa texture procédurale.
+
+taille_couleur: 1024      # px (texture de couleur), sauf `taille` propre au matériau
+taille_normale: 512
+taille_arm: 256
+qualite_couleur: 78       # JPEG
+
+materiaux:
+  facade_enduit:   { id: plastered_wall, uv: 3.0,
+                     teintes: [[232, 222, 200], [222, 205, 178], [238, 233, 223], [214, 194, 165]] }
+  facade_pierre:   { id: rustic_stone_wall, uv: 3.0 }
+  facade_meuliere: { id: stone_wall, uv: 3.0 }
+  facade_brique:   { id: brick_wall_001, uv: 3.0 }
+  facade_bois:     { id: weathered_plank_siding, uv: 3.0 }
+  facade_activite: { id: corrugated_iron_02, uv: 3.0, teintes: [[205, 207, 205], [208, 200, 182]] }
+  facade_annexe:   { id: concrete_block_wall, uv: 3.0, teintes: [[196, 192, 184], [176, 168, 154]] }
+  facade_projet:   { id: white_stucco, uv: 3.0, teintes: [[241, 239, 233]] }
+  couverture_tuiles:    { id: roof_tiles, uv: 2.0 }
+  couverture_ardoise:   { id: roof_slates_02, uv: 2.0 }
+  couverture_bac_acier: { id: corrugated_iron_02, uv: 2.0 }
+  couverture_terrasse:  { id: tarred_gravel, uv: 2.0 }
+  sol_pelouse:  { id: leafy_grass, uv: 1.5, teintes: [[104, 132, 64]] }
+  sol_gravier:  { id: gravel_floor_02, uv: 2.0 }
+  sol_terre:    { id: brown_mud_dry, uv: 3.0 }
+  sol_enrobe:   { id: clean_asphalt, uv: 4.0 }
+  sol_dalles:   { id: concrete_pavement, uv: 2.0 }
+  sol_base:     { id: sandy_gravel, uv: 2.0 }
+  asphalte:     { id: clean_asphalt, uv: 4.0 }
+  trottoir:     { id: patterned_concrete_pavers, uv: 2.0 }
+  chemin:       { id: gravel_floor_02, uv: 3.0 }
+  mur_cloture:  { id: old_stone_wall, uv: 3.0 }
+  massif:       { id: forest_leaves_03, uv: 2.0, teintes: [[70, 100, 50]] }
+  # Une seule image par texture : les teintes d'un même identifiant partagent la plus claire,
+  # les autres l'assombrissent par le facteur de couleur (glTF ne permet pas d'éclaircir).
+  feuillage_0:  { id: forest_leaves_03, uv: 10.0, taille: 512, teintes: [[70, 98, 48]] }
+  feuillage_1:  { id: forest_leaves_03, uv: 10.0, taille: 512, teintes: [[86, 114, 56]] }
+  feuillage_2:  { id: forest_leaves_03, uv: 10.0, taille: 512, teintes: [[62, 88, 50]] }
+  carrelage_piscine: { id: square_tiled_wall, uv: 0.5, taille: 512, teintes: [[90, 170, 196]] }
+  porte_sectionnelle: { id: painted_metal_shutter, uv: 1.0, taille: 512,
+                        teintes: [[214, 216, 214]] }
+  porte_0: { id: rough_pine_door, uv: 1.0, taille: 512 }
+  porte_1: { id: rough_pine_door, uv: 1.0, taille: 512, teintes: [[70, 92, 76]] }
+  porte_2: { id: rough_pine_door, uv: 1.0, taille: 512, teintes: [[78, 80, 84]] }

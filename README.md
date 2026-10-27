@@ -32,6 +32,12 @@ La maquette est posée sur un socle découpé selon cette zone. Les seuils sont 
 | Lampadaires | OpenStreetMap, sinon tous les 25 m | **indicatif** sans OSM |
 | Projet | fiche du site (volumes) ou modèle de l'architecte | selon la fiche |
 
+**Textures** : matériaux photographiés libres de droits (Poly Haven, CC0) posés à leur taille
+réelle (enduits, pierre, brique, bardage, tuiles, ardoise, pavés, gravier, pelouse, feuillage),
+colorisés quand une teinte est voulue (le grain est gardé) ; choix dans `config/materiaux.yaml`,
+cache dans `outils/textures/`. Sans réseau, des textures procédurales prennent le relais. Google
+Street View est exclu (ses conditions interdisent d'en tirer des textures ; API payante).
+
 Les murs mitoyens sont aveugles. L'orthophoto n'est pas plaquée sur le sol (floue de près) :
 elle sert à classer le sol, rendu en matériaux nets.
 
@@ -45,7 +51,7 @@ uv run maquette site sites/<site>.yaml --no-rendu     # sans les images Cycles
 ```
 
 Résultat dans `exports/<site>/` : `index.html` (visionneuse), `maquette.glb`, `vue_aerienne.png`,
-`vue_rue.png`. La page se sert de la maquette à côté d'elle : il faut la publier par HTTP
+`vue_rue.png`. Sur ordinateur, la visionneuse ajoute une occlusion ambiante (recoins ombrés). La page se sert de la maquette à côté d'elle : il faut la publier par HTTP
 (un `file://` ne charge pas le GLB). `?qualite=basse` retire les ombres (téléphones modestes).
 
 ### Fiche d'un site

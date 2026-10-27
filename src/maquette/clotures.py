@@ -230,7 +230,7 @@ def maillages(
                 terrain,
                 -0.2,
                 c.hauteur,
-                "feuillage_1",
+                "massif",
                 sortie,
                 2.0,
             )

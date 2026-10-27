@@ -42,4 +42,8 @@ Voir `README.md` pour l'usage et `docs/sources.md` pour les sources.
   des polygones à trous qui se touchent.
 - Un nœud par bâtiment du site, avec `infos` (JSON) pour la visionneuse ; voisins regroupés.
 - L'infrarouge n'est pas étalonné : le seuil végétal / minéral est calculé par zone (Otsu).
+- Textures photographiées (`bibliotheque.py`, `config/materiaux.yaml`) : une image par texture,
+  recolorée une fois vers la teinte la plus claire de son entrée ; les variantes l'assombrissent
+  par le facteur de couleur (glTF le borne à 1). Échelle réelle par `KHR_texture_transform`.
+  Budget : GLB < 14 Mo, sinon gltfpack passe en meshopt (décodeur WebAssembly).
 - Typage strict (`mypy`), `ruff` (100 colonnes), un test synthétique par transformation.
