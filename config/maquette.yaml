@@ -1,13 +1,19 @@
 # Paramètres des maquettes (aucune valeur métier en dur dans le code).
 
+perimetre:                    # règle : le site, ses parcelles contiguës et celles d'en face
+  contigu: 1.0                # m, distance au site d'une parcelle contiguë
+  en_face: 35.0               # m, portée des parcelles en vis-à-vis (de l'autre côté de la voie)
+  part_voie: 0.6              # part du plus court segment site → parcelle passant dans la voie
+  marge_voirie: 4.0           # m de voirie gardés autour des parcelles retenues
+  marge_donnees: 15.0         # m de données téléchargées autour de la zone
+
 contexte:
-  rayon: 150            # m de contexte autour de l'emprise du site
-  pas_terrain: 2.0      # m, maillage du terrain (MNT LiDAR HD)
-  epaisseur_socle: 4.0  # m sous le point le plus bas : socle façon maquette d'architecte
+  pas_terrain: 1.0            # m, grille du terrain (MNT LiDAR HD)
+  epaisseur_socle: 3.0        # m sous le point le plus bas : socle découpé selon la zone
 
 sources:
-  resolution_ortho: 0.1   # m/pixel (BD ORTHO servie par la Géoplateforme)
-  resolution_lidar: 0.5   # m/pixel (MNT et MNS LiDAR HD)
+  resolution_ortho: 0.2       # m/pixel (résolution native de la BD ORTHO et de l'infrarouge)
+  resolution_lidar: 0.5       # m/pixel (MNT et MNS LiDAR HD)
 
 batiments:
   hauteur_etage: 3.0          # m, hauteur d'étage par défaut (même valeur que TraqueSoc)
@@ -18,8 +24,7 @@ batiments:
   erosion_lidar: 0.6          # m, retrait de l'emprise pour lire le MNS (décalage cadastre / LiDAR)
   ecart_toit_plat: 0.25       # m, écart-type du MNS sous lequel le toit est plat
   acrotere: 0.4               # m au-dessus des toits plats des collectifs et bâtiments d'activité
-  pas_toit_contexte: 1.0      # m, maillage des toits du contexte
-  pas_toit_detail: 0.5        # m, maillage des toits du site et du projet
+  pas_toit: 0.5               # m, maillage des toits complexes (plis imposés sinon)
   enfouissement: 0.6          # m, les murs descendent sous le terrain (pas de jour en pente)
   debord_toit: 0.4            # m, débord des toits en pente (égout et rives)
   epaisseur_toit: 0.2         # m, épaisseur visible en rive
@@ -43,6 +48,34 @@ voirie:
   bande_trottoir: 6.0         # m au-delà de la chaussée pris dans le domaine non cadastré
   hauteur_bordure: 0.14
   surelevation_chaussee: 0.04
+
+sol:
+  resolution: 0.25            # m, grille de classement du sol
+  ndvi_vegetal: null          # seuil végétal / minéral ; null : seuil d'Otsu sur la zone
+                              # (l'infrarouge n'est pas étalonné d'une prise de vue à l'autre)
+  ndvi_bornes: [-0.15, 0.2]   # bornes du seuil automatique
+  marge_objets: 0.05          # un objet (abri, véhicule) a un indice sous le seuil moins ceci
+  hauteur_massif: [0.5, 2.5]  # m de sursol : pelouse en dessous, massif entre, arbre au-dessus
+  massif_extrude: 0.9         # m : un massif plus haut est un volume, plus bas un couvre-sol
+  ombre_luminance: 0.16       # luminance sous laquelle un sol minéral est dans l'ombre (inconnu)
+  lissage: 0.6                # m, lissage des classes
+  surface_min: 1.5            # m², plus petite tache gardée
+
+detections:
+  vehicule: { hauteur: [1.1, 2.2], surface: [4.5, 14.0], longueur: [3.2, 6.0],
+              largeur: [1.4, 2.5] }
+  annexe: { hauteur: [1.8, 6.0], surface: [4.0, 90.0], compacite: 0.55 }
+
+mobilier:
+  lampadaire_espacement: 25.0 # m, lampadaires indicatifs si OSM n'en recense aucun
+  lampadaire_hauteur: 6.0
+
+clotures:
+  mur_plein_min: 1.3          # m : sur rue, plus bas c'est un muret surmonté d'une grille
+  muret_hauteur: 0.6
+  portail: [2.4, 6.0]         # m, largeur d'une ouverture sur rue qui reçoit un portail
+  portail_hauteur: 1.6
+  grillage_hauteur: 1.5       # m, grillage indicatif entre parcelles
 
 vegetation:
   hauteur_min: 2.5            # m au-dessus du sol (MNS − MNT)

@@ -71,6 +71,8 @@
   .etiquette { background: var(--bleu-fonce); color: #fff; padding: 2px 7px; border-radius: 5px; font-size: 12px;
     white-space: nowrap; pointer-events: none; box-shadow: 0 2px 6px rgba(0,0,0,.25); }
   .etiquette.adresse { background: var(--bleu); }
+  .etiquette.voisine { background: rgba(255, 253, 248, 0.88); color: var(--bleu-fonce); font-size: 11px;
+    box-shadow: none; border: 1px solid rgba(23, 58, 82, 0.25); }
   .etiquette.mesure { background: #fff; color: var(--bleu-fonce); border: 1px solid var(--bleu); }
   #manette { position: fixed; left: 24px; bottom: 150px; width: 120px; height: 120px; border-radius: 50%;
     background: rgba(23, 58, 82, 0.25); border: 2px solid rgba(255,255,255,0.5); display: none; touch-action: none; }
@@ -323,12 +325,21 @@ function etiquette(texte, position, classe = '') {
 }
 function ajouterEtiquettes() {
   for (const p of INFOS.parcelles) etiquette(p.libelle, V(p.centre[0], p.centre[1], p.centre[2] + 2.5));
+  for (const p of INFOS.voisines ?? []) {
+    etiquette(p.libelle, V(p.centre[0], p.centre[1], p.centre[2] + 1.5), 'voisine').userData.voisine = true;
+  }
+  afficherEtiquettes();
   if (INFOS.adresse_locale) {
     const [ax, ay, az] = INFOS.adresse_locale;
     etiquette(INFOS.adresse.split(',')[0], V(ax, ay, az + 5), 'adresse');
   }
 }
-$('#etiquettes').onchange = (e) => objetsEtiquettes.forEach((o) => { o.visible = e.target.checked; });
+// Numéros des voisines masqués à hauteur de piéton (ils encombrent la vue).
+function afficherEtiquettes() {
+  const actif = $('#etiquettes').checked;
+  for (const o of objetsEtiquettes) o.visible = actif && !(o.userData.voisine && mode === 'pieton');
+}
+$('#etiquettes').onchange = afficherEtiquettes;
 
 // Contrôles -----------------------------------------------------------------------------
 const orbite = new OrbitControls(camera, renderer.domElement);
@@ -359,6 +370,7 @@ function changerMode(m, garderCible = false) {
   $('#manette').style.display = tactile && m !== 'orbite' ? 'block' : 'none';
   $('#altitude').style.display = tactile && m === 'libre' ? 'flex' : 'none';
   $('#aide').innerHTML = AIDES[m];
+  afficherEtiquettes();
 }
 for (const b of document.querySelectorAll('[data-mode]')) b.onclick = () => changerMode(b.dataset.mode);
 function cibleDevant() {
@@ -437,7 +449,7 @@ function deplacer(dt) {
 // Vues prédéfinies.
 function allerA(vue, transition = true) {
   let position, cible = centre.clone().add(new THREE.Vector3(0, 3, 0));
-  const recul = camera.aspect < 1 ? 1.7 : 1;
+  const recul = (camera.aspect < 1 ? 1.7 : 1) * (INFOS.rayon_zone ?? 140) / 140;
   if (vue === 'aerienne') position = V(cx - 75 * recul, cy - 95 * recul, cz + 80 * recul);
   else if (vue === 'dessus') position = V(cx, cy - 0.5, cz + 220);
   else if (INFOS.vue_rue) {

@@ -20,9 +20,16 @@ from shapely.geometry import LineString, Polygon, shape
 from shapely.geometry.polygon import orient
 
 from maquette import batiments as bt
-from maquette import clotures, vegetation, voirie
+from maquette import clotures, detections, mobilier, perimetre, sol, vegetation, voirie
 from maquette.config import Site, Volume
-from maquette.geoplateforme import COUCHE_MNS, COUCHE_MNT, Client, Grille, emprise_alignee
+from maquette.geoplateforme import (
+    COUCHE_IRC,
+    COUCHE_MNS,
+    COUCHE_MNT,
+    Client,
+    Grille,
+    emprise_alignee,
+)
 from maquette.maillage import Maillage, fusionner, polygones
 from maquette.terrain import Terrain
 from maquette.textures import catalogue
@@ -34,7 +41,14 @@ ROUTES = "BDTOPO_V3:troncon_de_route"
 EAU = "BDTOPO_V3:surface_hydrographique"
 
 AVERTISSEMENTS = [
-    "Hauteurs, toitures, relief et arbres mesurés (LiDAR HD de l'IGN).",
+    "Périmètre : le site, ses parcelles contiguës et celles d'en face ; au-delà, rien n'est "
+    "modélisé (perspectives à part).",
+    "Hauteurs, toitures, relief, arbres, clôtures, petites constructions et véhicules mesurés "
+    "(LiDAR HD de l'IGN, date du survol).",
+    "Sol classé d'après la photo aérienne, l'infrarouge et le LiDAR, rendu en matériaux types "
+    "(pelouse, gravier, enrobé, dalles…) : l'aspect exact des revêtements est indicatif.",
+    "Grillages entre parcelles, grilles sur muret, portails et lampadaires sans source : "
+    "indicatifs (le LiDAR ne voit pas un grillage).",
     "Fenêtres, portes et balcons : disposition indicative, générée d'après le nombre d'étages ; "
     "aucune source ouverte ne décrit les façades.",
     "Couleurs des façades indicatives (matériau des murs de la BD TOPO quand il est connu).",
@@ -137,73 +151,147 @@ def _batiment_projet(
     return volumes
 
 
+def _vers_local_wgs84(origine: tuple[float, float, float]) -> Any:
+    from pyproj import Transformer
+
+    t = Transformer.from_crs("EPSG:4326", "EPSG:2154", always_xy=True)
+
+    def convertir(lon: float, lat: float) -> tuple[float, float]:
+        x, y = t.transform(lon, lat)
+        return x - origine[0], y - origine[1]
+
+    return convertir
+
+
+def _boite_wgs84(emprise: tuple[float, float, float, float]) -> tuple[float, float, float, float]:
+    from pyproj import Transformer
+
+    t = Transformer.from_crs("EPSG:2154", "EPSG:4326", always_xy=True)
+    xs, ys = t.transform(
+        [emprise[0], emprise[2], emprise[0], emprise[2]],
+        [emprise[1], emprise[1], emprise[3], emprise[3]],
+    )
+    return min(xs), min(ys), max(xs), max(ys)
+
+
 def construire(site: Site, cfg: dict[str, Any], dossier: Path, force: bool = False) -> Path:
     """Télécharge les données (en cache) et écrit la scène dans `dossier/scene`."""
     client = Client(dossier / "brut", force)
-    cc, cs = cfg["contexte"], cfg["sources"]
+    cp, cc, cs, cb = cfg["perimetre"], cfg["contexte"], cfg["sources"], cfg["batiments"]
 
+    # Périmètre ------------------------------------------------------------------------
     filtre = "idu IN (" + ",".join(f"'{i}'" for i in site.idus) + ")"
     parcelles_site = client.wfs(PARCELLES, "parcelles_site", filtre=filtre)
-    trouvees = {f["properties"]["idu"] for f in parcelles_site}
-    manquantes = set(site.idus) - trouvees
+    manquantes = set(site.idus) - {f["properties"]["idu"] for f in parcelles_site}
     if manquantes:
         raise ValueError(f"parcelles introuvables au cadastre : {sorted(manquantes)}")
     site_l93 = shapely.union_all([shapely.force_2d(shape(f["geometry"])) for f in parcelles_site])
+    centre = site_l93.centroid
+    xy0 = (float(round(centre.x)), float(round(centre.y)), 0.0)
+    m = cp["en_face"] + 40
     x0, y0, x1, y1 = site_l93.bounds
-    r = cc["rayon"]
-    emprise = emprise_alignee(x0 - r, y0 - r, x1 + r, y1 + r)
+    proches = client.wfs(PARCELLES, "parcelles", emprise=(x0 - m, y0 - m, x1 + m, y1 + m))
+    proprietes = {f["properties"]["idu"]: f["properties"] for f in proches}
+    parcelles_l = {}
+    for f in proches:
+        g = polygones(_local(shape(f["geometry"]), xy0))
+        if g:
+            parcelles_l[f["properties"]["idu"]] = max(g, key=lambda p: p.area)
+    site_local = _local(site_l93, xy0)
+    perim = perimetre.calculer(site_local, parcelles_l, set(site.idus), cfg)
+    zx0, zy0, zx1, zy1 = perim.zone.bounds
+    md = cp["marge_donnees"]
+    emprise = emprise_alignee(
+        zx0 + xy0[0] - md, zy0 + xy0[1] - md, zx1 + xy0[0] + md, zy1 + xy0[1] + md
+    )
 
-    parcelles = client.wfs(PARCELLES, "parcelles", emprise=emprise)
+    # Données de la zone ------------------------------------------------------------------
     batiments_bd = client.wfs(BATIMENTS, "batiments", emprise=emprise)
     routes = client.wfs(ROUTES, "routes", emprise=emprise)
     surfaces_eau = client.wfs(EAU, "eau", emprise=emprise)
     mnt93 = client.elevation(COUCHE_MNT, "mnt", emprise, cs["resolution_lidar"])
     mns93 = client.elevation(COUCHE_MNS, "mns", emprise, cs["resolution_lidar"])
     ortho = client.ortho(emprise, cs["resolution_ortho"])
+    irc = client.ortho(emprise, cs["resolution_ortho"], COUCHE_IRC, "irc")
+    elements_osm = client.osm(*_boite_wgs84(emprise))
     adresse = client.geocoder(site.adresse) if site.adresse else None
 
-    centre = site_l93.centroid
-    cx, cy = round(centre.x), round(centre.y)
     cz = round(float(mnt93.echantillonner(np.array([centre.x]), np.array([centre.y]))[0]), 1)
-    origine = (float(cx), float(cy), float(cz))
+    origine = (xy0[0], xy0[1], cz)
     mnt, mns = _grille_locale(mnt93, origine), _grille_locale(mns93, origine)
+    mnh = Grille(mns.emprise, mns.resolution, (mns.valeurs - mnt.valeurs).astype(np.float32))
     terrain = Terrain.depuis_mnt(mnt93, origine, cc["pas_terrain"])
-    fenetre = shapely.box(terrain.xmin, terrain.ymin, terrain.xmax, terrain.ymax)
-    site_local = _local(site_l93, origine)
+    e = mnt.emprise
+    emprise_locale = (e[0], e[1], e[2], e[3])
+    zone = perim.zone
+    retenues = perim.parcelles
+    domaine_public = zone.difference(shapely.union_all(list(parcelles_l.values())))
 
     sortie = dossier / "scene"
     textures = sortie / "textures"
     shutil.rmtree(textures, ignore_errors=True)
     textures.mkdir(parents=True)
-    ortho.save(textures / "ortho.jpg", quality=86)
 
-    objets: list[Objet] = []
-    sol = Objet("terrain", "terrain", lisses={"ortho"})
-    sol.parts["ortho"].append(terrain.maillage())
-    sol.parts["socle"].append(terrain.socle(cc["epaisseur_socle"]))
-    objets.append(sol)
-
-    # Bâtiments ------------------------------------------------------------------------
-    cb = cfg["batiments"]
-    interieur = fenetre.buffer(-1.0)
+    # Bâtiments (BD TOPO, puis petites constructions détectées) -------------------------
     liste: list[bt.Batiment] = []
     for f in batiments_bd:
         g = _local(shape(f["geometry"]), origine)
-        if not interieur.contains(g):
+        if g.intersection(retenues).area < 0.5 * g.area:
             continue
-        part_site = g.intersection(site_local).area / max(g.area, 1e-9)
-        detail = part_site >= 0.5
         for k, poly in enumerate(polygones(g)):
-            emprise_b = bt.preparer_emprise(poly, 0.15 if detail else 0.3)
-            if emprise_b is None:
-                continue
-            p = f["properties"]
-            liste.append(bt.Batiment(f"{p['cleabs']}_{k}", emprise_b, p, detail=detail))
+            emprise_b = bt.preparer_emprise(poly, 0.15)
+            if emprise_b is not None:
+                p = f["properties"]
+                liste.append(bt.Batiment(f"{p['cleabs']}_{k}", emprise_b, p, detail=True))
+    connus = shapely.union_all([b.emprise for b in liste]) if liste else Polygon()
+    lignes_routes = [(_local(shape(f["geometry"]), origine), f["properties"]) for f in routes]
+    lignes_routes = [(g, p) for g, p in lignes_routes if isinstance(g, LineString)]
+    rues, chaussee = voirie.voirie(
+        lignes_routes,
+        retenues.union(shapely.union_all(list(parcelles_l.values()))),
+        connus,
+        zone,
+        terrain,
+        cfg,
+    )
+    ndvi_lidar = sol.ndvi(
+        sol.echantillonner_image(
+            irc,
+            emprise_locale,
+            *np.meshgrid(
+                mnh.emprise[0] + (np.arange(mnh.valeurs.shape[1]) + 0.5) * mnh.resolution,
+                mnh.emprise[3] - (np.arange(mnh.valeurs.shape[0]) + 0.5) * mnh.resolution,
+            ),
+        )
+    )
+    seuil = sol.seuil_vegetal(
+        ndvi_lidar[
+            shapely.contains_xy(
+                zone,
+                *np.meshgrid(
+                    mnh.emprise[0] + (np.arange(mnh.valeurs.shape[1]) + 0.5) * mnh.resolution,
+                    mnh.emprise[3] - (np.arange(mnh.valeurs.shape[0]) + 0.5) * mnh.resolution,
+                ),
+            )
+        ],
+        cfg,
+    )
+    annexes, vehicules = detections.detecter(mnh, ndvi_lidar, zone, connus.buffer(0.6), seuil, cfg)
+    for i, rect in enumerate(annexes):
+        liste.append(
+            bt.Batiment(
+                f"LIDAR{i:03d}_0",
+                rect,
+                {"usage_1": "Annexe", "construction_legere": True, "source": "LiDAR"},
+                detail=True,
+            )
+        )
     for b in liste:
         bt.mesurer(b, mns, terrain, cfg)
         bt.classer(b, cfg)
-        if b.detail:
-            bt.teinter_toit(b, ortho, terrain)
+        bt.teinter_toit(b, ortho, terrain)
+        if b.proprietes.get("source") == "LiDAR":
+            b.infos["origine"] = "détectée par le LiDAR (absente du cadastre)"
 
     projet: list[bt.Batiment] = []
     if site.projet:
@@ -212,45 +300,44 @@ def construire(site: Site, cfg: dict[str, Any], dossier: Path, force: bool = Fal
 
     geometries = [b.emprise for b in liste]
     arbre_bat = shapely.STRtree(geometries)
-    lignes_routes = [(_local(shape(f["geometry"]), origine), f["properties"]) for f in routes]
-    lignes_routes = [(g, p) for g, p in lignes_routes if isinstance(g, LineString)]
     reseau = shapely.union_all([g for g, _ in lignes_routes]) if lignes_routes else None
 
+    objets: list[Objet] = []
     contexte = Objet("contexte", "contexte")
     toits: dict[str, tuple[str, tuple[float, float, float]]] = {}
     infos_site: list[dict[str, Any]] = []
     for idx, b in enumerate(liste + projet):
         dans_liste = idx < len(liste)
-        pas = cb["pas_toit_detail"] if b.detail else cb["pas_toit_contexte"]
         lignes, contacts = bt.plis(b)
-        anneaux = bt.anneaux_batiment(b.emprise, pas, contacts)
+        anneaux = bt.anneaux_batiment(b.emprise, cb["pas_toit"], contacts)
         if dans_liste:
             mitoyens = [bt.mitoyennete(b.emprise, a, arbre_bat, geometries, idx) for a in anneaux]
-        else:
-            mitoyens = [np.zeros(len(a.origines), dtype=bool) for a in anneaux]
-        voisins = None
-        if dans_liste:
-            proches = [
+            proches_b = [
                 j for j in arbre_bat.query(b.emprise.buffer(cb["debord_toit"] + 0.1)) if j != idx
             ]
-            voisins = shapely.union_all([geometries[j] for j in proches]) if proches else None
+            voisins = shapely.union_all([geometries[j] for j in proches_b]) if proches_b else None
+        else:
+            mitoyens = [np.zeros(len(a.origines), dtype=bool) for a in anneaux]
+            voisins = None
         toit, sous_toit = bt.toit(
-            b, anneaux, pas, terrain, lignes, cb["debord_toit"], cb["epaisseur_toit"], voisins
+            b, anneaux, cb["pas_toit"], lignes, cb["debord_toit"], cb["epaisseur_toit"], voisins
         )
-        if not b.detail:
-            contexte.parts["ortho"].append(toit)
-            contexte.parts["sous_toiture"].append(sous_toit)
-            contexte.ajouter(bt.murs_contexte(b, anneaux, mitoyens, terrain, cfg))
-            contexte.ajouter(bt.balcons_contexte(b, anneaux, mitoyens, cfg))
-            continue
-        nom_toit = f"toit_{len(toits)}"
-        toits[nom_toit] = (b.type_toit, b.teinte_toit)
+        teinte = tuple(round(v * 10) / 10 for v in b.teinte_toit)
+        nom_toit = f"toit_{b.type_toit}_{''.join(str(round(v * 10)) for v in teinte)}"
+        toits[nom_toit] = (b.type_toit, (teinte[0], teinte[1], teinte[2]))
         portes = _aretes_porte(anneaux[0], mitoyens[0], reseau)
+        morceaux = bt.murs_detail(b, anneaux, mitoyens, terrain, portes, cfg)
+        sur_site = b.projet or b.emprise.intersection(site_local).area >= 0.5 * b.emprise.area
+        if not sur_site:
+            contexte.parts[nom_toit].append(toit)
+            contexte.parts["sous_toiture"].append(sous_toit)
+            contexte.ajouter(morceaux)
+            continue
         calque = "projet" if b.projet else "existant"
         objet = Objet(f"{calque}_{len(infos_site)}", calque)
         objet.parts[nom_toit].append(toit)
         objet.parts["sous_toiture"].append(sous_toit)
-        objet.ajouter(bt.murs_detail(b, anneaux, mitoyens, terrain, portes, cfg))
+        objet.ajouter(morceaux)
         centre_b = b.emprise.representative_point()
         infos = {
             "calque": calque,
@@ -270,35 +357,68 @@ def construire(site: Site, cfg: dict[str, Any], dossier: Path, force: bool = Fal
         infos_site.append(infos)
         objets.append(objet)
     objets.append(contexte)
+    # Bâti existant seulement : le sol reste continu sous le projet (masqué en mode existant)
+    # et sous l'existant (démoli en mode projet).
+    emprises = shapely.union_all(geometries) if geometries else Polygon()
 
-    # Voirie, eau, végétation, limites ------------------------------------------------
-    parcelles_union = shapely.union_all([_local(shape(f["geometry"]), origine) for f in parcelles])
-    emprises = shapely.union_all(geometries + [b.emprise for b in projet])
-    rues, chaussee = voirie.voirie(lignes_routes, parcelles_union, emprises, fenetre, terrain, cfg)
+    # Sol, voirie, eau -------------------------------------------------------------------
+    osm, piscines_osm = mobilier.lire_osm(elements_osm, _vers_local_wgs84(origine), zone)
+    region_sol = retenues.intersection(zone).difference(emprises.buffer(0.05))
+    classes = sol.classer(region_sol, ortho, irc, emprise_locale, mnh, cfg)
+    if piscines_osm:
+        bassins = shapely.union_all(piscines_osm).intersection(region_sol)
+        classes = {k: g.difference(bassins) for k, g in classes.items()}
+        classes["eau"] = shapely.union_all([classes.get("eau", Polygon()), bassins])
+    surfaces_sol, bassins_creuses = sol.maillages(classes, terrain, mnh, cfg)
+    objet_sol = Objet(
+        "sol",
+        "terrain",
+        lisses={"sol_base", "sol_pelouse", "sol_gravier", "sol_terre", "sol_enrobe", "sol_dalles"},
+    )
+    objet_sol.parts["sol_base"].append(sol.sol_de_base(zone, bassins_creuses, terrain))
+    objet_sol.parts["socle"].append(sol.socle(zone, terrain, cc["epaisseur_socle"]))
+    objet_sol.ajouter(surfaces_sol)
+    objets.append(objet_sol)
+
     objet_voirie = Objet("voirie", "voirie")
     objet_voirie.ajouter(rues)
     eaux = [_local(shape(f["geometry"]), origine) for f in surfaces_eau]
-    objet_voirie.parts["eau"].extend(voirie.eau(eaux, fenetre, terrain))
+    objet_voirie.parts["eau"].extend(voirie.eau(eaux, zone, terrain))
+
+    # Clôtures, mobilier, véhicules ----------------------------------------------------------
+    limites_retenues = shapely.union_all(
+        [
+            p.boundary
+            for p in [*polygones(site_local), *perim.voisines.values(), *perim.en_face.values()]
+        ]
+    ).intersection(zone.buffer(0.2))
+    bord_public = domaine_public.buffer(0.3)
+    limites_rue = limites_retenues.intersection(bord_public)
+    limites_internes = limites_retenues.difference(bord_public)
+    interdit = shapely.union_all([emprises.buffer(0.4), chaussee])
+    portails_osm = [(el.x, el.y) for el in osm if el.nature == "portail"]
+    clos = clotures.detecter(
+        limites_rue, limites_internes, mns, mnt, ortho, emprise_locale, interdit, portails_osm, cfg
+    )
+    objet_clotures = Objet("clotures", "contexte")
+    objet_clotures.ajouter(clotures.maillages(clos, terrain, cfg))
+    objets.append(objet_clotures)
+
+    meubles, comptes = mobilier.construire(
+        osm, vehicules, lignes_routes, chaussee, zone, emprises, terrain, cfg
+    )
+    objet_voirie.ajouter(meubles)
     objets.append(objet_voirie)
 
-    limites_parcelles = shapely.union_all(
-        [_local(shape(f["geometry"]), origine).boundary for f in parcelles]
-    ).intersection(fenetre.buffer(-1.0))
-    murs = clotures.detecter(
-        limites_parcelles,
-        mns,
-        mnt,
-        ortho,
-        terrain,
-        shapely.union_all([emprises.buffer(0.4), chaussee]),
-    )
-    objet_voirie.ajouter(clotures.maillages(murs, terrain))
-
     exclusion = shapely.union_all([emprises.buffer(cfg["vegetation"]["marge_batiment"]), chaussee])
-    arbres = vegetation.detecter(mns, mnt, exclusion, terrain, cfg)
+    arbres = [
+        a
+        for a in vegetation.detecter(mns, mnt, exclusion, terrain, cfg)
+        if zone.contains(shapely.Point(a.x, a.y))
+    ]
     objet_arbres = Objet("vegetation", "vegetation")
     c_site = site_local.centroid
-    objet_arbres.ajouter(vegetation.maillages(arbres, (c_site.x, c_site.y, 70.0)))
+    objet_arbres.ajouter(vegetation.maillages(arbres, (c_site.x, c_site.y, 1e6)))
     objets.append(objet_arbres)
 
     limites = Objet("limites", "limites")
@@ -307,21 +427,21 @@ def construire(site: Site, cfg: dict[str, Any], dossier: Path, force: bool = Fal
 
     # Écriture ----------------------------------------------------------------------
     noms_materiaux = {m for o in objets for m, liste_m in o.parts.items() if liste_m}
-    materiaux = catalogue(noms_materiaux, textures, toits, "ortho.jpg")
+    materiaux = catalogue(noms_materiaux, textures, toits, "")
     tableaux: dict[str, np.ndarray] = {}
     description = []
     for i, o in enumerate(objets):
         parts = []
-        for j, (mat, morceaux) in enumerate(sorted(o.parts.items())):
-            m = fusionner(morceaux)
-            if not len(m):
+        for j, (mat, morceaux_m) in enumerate(sorted(o.parts.items())):
+            mm = fusionner(morceaux_m)
+            if not len(mm):
                 continue
             cle = f"o{i}_p{j}"
-            tableaux[f"{cle}_v"] = m.sommets.astype(np.float32)
-            tableaux[f"{cle}_f"] = m.faces.astype(np.int32)
-            tableaux[f"{cle}_uv"] = m.uv.astype(np.float32)
+            tableaux[f"{cle}_v"] = mm.sommets.astype(np.float32)
+            tableaux[f"{cle}_f"] = mm.faces.astype(np.int32)
+            tableaux[f"{cle}_uv"] = mm.uv.astype(np.float32)
             lisse = mat in o.lisses or materiaux[mat].lisse
-            parts.append({"materiau": mat, "cle": cle, "triangles": len(m), "lisse": lisse})
+            parts.append({"materiau": mat, "cle": cle, "triangles": len(mm), "lisse": lisse})
         if parts:
             description.append({"nom": o.nom, "calque": o.calque, "parts": parts, "infos": o.infos})
     np.savez_compressed(sortie / "maillages.npz", allow_pickle=False, **tableaux)
@@ -338,20 +458,53 @@ def construire(site: Site, cfg: dict[str, Any], dossier: Path, force: bool = Fal
     scene = {
         "site": site.identifiant,
         "objets": description,
-        "materiaux": {n: m.en_dict() for n, m in materiaux.items()},
+        "materiaux": {n: mt.en_dict() for n, mt in materiaux.items()},
         "modeles": modeles,
         "origine_lambert93": origine,
-        "emprise_locale": [terrain.xmin, terrain.ymin, terrain.xmax, terrain.ymax],
+        "emprise_locale": list(zone.bounds),
     }
     (sortie / "scene.json").write_text(json.dumps(scene, ensure_ascii=False, indent=1))
 
     infos = _infos(
         site, parcelles_site, origine, terrain, site_local, adresse, infos_site, arbres, objets, cfg
     )
-    infos["clotures_m"] = clotures.infos(murs)
+    infos["voisines"] = _etiquettes(perim.voisines, proprietes, terrain, "contiguë")
+    infos["voisines"] += _etiquettes(perim.en_face, proprietes, terrain, "en face")
+    infos["contour_zone"] = [
+        [round(x, 2), round(y, 2)] for x, y in np.asarray(zone.exterior.coords)[:, :2]
+    ]
+    infos["rayon_zone"] = round(
+        float(np.hypot(zone.bounds[2] - zone.bounds[0], zone.bounds[3] - zone.bounds[1])) / 2, 1
+    )
+    infos["clotures_m"] = clotures.infos(clos)
+    infos["detections"] = {"petites_constructions": len(annexes), **comptes}
+    infos["sol_m2"] = {k: round(g.area) for k, g in classes.items()}
     infos["vue_rue"] = _vue_rue(site_local, chaussee, emprises, infos["adresse_locale"], terrain)
     (sortie / "infos.json").write_text(json.dumps(infos, ensure_ascii=False, indent=1))
     return sortie
+
+
+def _etiquettes(
+    parcelles: dict[str, Polygon],
+    proprietes: dict[str, dict[str, Any]],
+    terrain: Terrain,
+    relation: str,
+) -> list[dict[str, Any]]:
+    resultat = []
+    for idu, poly in sorted(parcelles.items()):
+        p = proprietes.get(idu, {})
+        c = poly.representative_point()
+        z = float(terrain.hauteur(np.array([[c.x, c.y]]))[0])
+        resultat.append(
+            {
+                "idu": idu,
+                "libelle": f"{str(p.get('section', '')).lstrip('0')} {int(p.get('numero') or 0)}",
+                "contenance": p.get("contenance"),
+                "relation": relation,
+                "centre": [round(c.x, 1), round(c.y, 1), round(z, 1)],
+            }
+        )
+    return resultat
 
 
 def _vue_rue(
@@ -491,10 +644,12 @@ def _infos(
         "sources": [
             "Cadastre : Parcellaire Express (IGN)",
             "Bâtiments, routes, eau : BD TOPO (IGN)",
-            "Photographie aérienne : BD ORTHO (IGN)",
-            "Relief, toitures, arbres : LiDAR HD, MNT et MNS (IGN)",
+            "Photographie aérienne : BD ORTHO (IGN), pour classer le sol et teinter les toits",
+            "Relief, toitures, arbres, clôtures, objets : LiDAR HD, MNT et MNS (IGN)",
+            "Infrarouge : BD ORTHO IRC (IGN)",
             "Adresse : Base adresse nationale",
             "Licence ouverte Etalab 2.0",
+            "Mobilier et piscines : © les contributeurs d'OpenStreetMap (ODbL)",
         ],
         "avertissements": AVERTISSEMENTS,
         "couleurs": cfg["couleurs"],

@@ -2,8 +2,8 @@
 
 Le MNS est bruité (± 10 cm, cheminées, arbres en surplomb) : un toit maillé directement
 dessus paraît bosselé. On ajuste donc des plans par moindres carrés robustes et on garde le
-modèle le plus simple qui explique les mesures ; au-delà d'un écart de 0,6 m, le toit est
-jugé complexe et reste maillé sur le MNS lissé.
+modèle le plus simple qui explique les mesures. Un toit composé (écart > 0,6 m) prend le
+meilleur modèle simple ; au-delà de 1,5 m d'écart, aucun ne tient et le toit est plat.
 """
 
 from __future__ import annotations
@@ -17,6 +17,7 @@ from shapely.geometry import LineString, Polygon
 
 Tableau = NDArray[np.float64]
 ECART_COMPLEXE = 0.6
+ECART_ABERRANT = 1.5
 TOLERANCE_SIMPLICITE = 0.07
 
 
@@ -144,7 +145,10 @@ def ajuster(emprise: Polygon, x: Tableau, y: Tableau, z: Tableau) -> ModeleToit 
 
     plus_petit = min(m.ecart for m in candidats)
     if plus_petit > ECART_COMPLEXE:
-        return None
+        # Toit composé (L, croupes multiples) : le meilleur modèle simple reste plus lisible
+        # qu'un maillage du MNS bruité ; au-delà d'ECART_ABERRANT, rien ne tient.
+        meilleur = min(candidats, key=lambda m: m.ecart)
+        return meilleur if plus_petit < ECART_ABERRANT else None
     for m in candidats:  # dans l'ordre de simplicité
         if m.ecart <= plus_petit + TOLERANCE_SIMPLICITE:
             return m

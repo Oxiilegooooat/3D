@@ -178,13 +178,50 @@ def surface(
     pas: float | None,
     uv: Callable[[Tableau], Tableau],
 ) -> Maillage:
-    """Surface triangulée d'un polygone, d'altitude `hauteur(xy)` (orientée vers le haut)."""
-    xy, faces = trianguler(poly, pas)
+    """Surface triangulée d'un polygone, d'altitude `hauteur(xy)` (orientée vers le haut).
+
+    Avec `pas`, le polygone est découpé par une grille avant d'être triangulé : la surface
+    suit le relief à ce pas. Triangulation contrainte de GEOS, robuste aux polygones à trous
+    qui se touchent (sol percé par les bâtiments).
+    """
+    xy, faces = trianguler_robuste(poly, pas)
     if not len(faces):
         return Maillage.vide()
     z = hauteur(xy)
     faces = orienter_vers_le_haut(xy, faces)
     return Maillage(np.column_stack([xy, z]), faces, uv(xy))
+
+
+def trianguler_robuste(
+    geometrie: shapely.Geometry, pas: float | None = None
+) -> tuple[Tableau, NDArray[np.int64]]:
+    """Triangles d'une géométrie surfacique quelconque (sommets partagés)."""
+    geometrie = shapely.make_valid(geometrie)
+    if geometrie.is_empty:
+        return np.zeros((0, 2)), np.zeros((0, 3), dtype=np.int64)
+    if pas:
+        x0, y0, x1, y1 = geometrie.bounds
+        xs = np.arange(np.floor(x0 / pas) * pas, x1 + pas, pas)
+        ys = np.arange(np.floor(y0 / pas) * pas, y1 + pas, pas)
+        gx, gy = np.meshgrid(xs[:-1], ys[:-1])
+        cellules = shapely.box(gx.ravel(), gy.ravel(), gx.ravel() + pas, gy.ravel() + pas)
+        shapely.prepare(geometrie)
+        cellules = cellules[shapely.intersects(geometrie, cellules)]
+        morceaux = shapely.intersection(cellules, geometrie)
+    else:
+        morceaux = np.array([geometrie])
+    morceaux = morceaux[~shapely.is_empty(morceaux)]
+    triangles = shapely.get_parts(
+        shapely.get_parts(shapely.constrained_delaunay_triangles(morceaux))
+    )
+    triangles = triangles[shapely.get_type_id(triangles) == 3]
+    triangles = triangles[shapely.area(triangles) > 1e-8]
+    if not len(triangles):
+        return np.zeros((0, 2)), np.zeros((0, 3), dtype=np.int64)
+    coins = shapely.get_coordinates(shapely.get_exterior_ring(triangles)).reshape(-1, 4, 2)[:, :3]
+    cles = np.round(coins.reshape(-1, 2), 4)
+    xy, inverse = np.unique(cles, axis=0, return_inverse=True)
+    return xy, inverse.reshape(-1, 3).astype(np.int64)
 
 
 def orienter_vers_le_haut(xy: Tableau, faces: NDArray[np.int64]) -> NDArray[np.int64]:
@@ -402,3 +439,18 @@ def transformer(m: Maillage, echelle: Tableau, rotation_z: float, translation: T
 def retourner(m: Maillage) -> Maillage:
     """Inverse l'orientation des faces."""
     return Maillage(m.sommets, m.faces[:, [0, 2, 1]], m.uv)
+
+
+def repere(m: Maillage, ex: Tableau, ey: Tableau, ez: Tableau, origine: Tableau) -> Maillage:
+    """Place un maillage modélisé dans son repère propre (x, y, z) sur les axes donnés."""
+    base = np.column_stack([ex, ey, ez])
+    return Maillage(m.sommets @ base.T + origine, m.faces.copy(), m.uv.copy())
+
+
+def plaque(contour: Tableau) -> Maillage:
+    """Polygone plan (x, y) à z = 0, UV dans sa boîte englobante (0-1), face vers +z."""
+    xy, faces = trianguler_anneaux([np.asarray(contour, dtype=np.float64)])
+    faces = orienter_vers_le_haut(xy, faces)
+    mini, maxi = xy.min(axis=0), xy.max(axis=0)
+    uv = (xy - mini) / np.maximum(maxi - mini, 1e-9)
+    return Maillage(np.column_stack([xy, np.zeros(len(xy))]), faces, uv)

@@ -13,8 +13,19 @@ Géoplateforme (`data.geopf.fr`), sous Licence ouverte Etalab 2.0.
 | MNT LiDAR HD | WMS raster `IGNF_LIDAR-HD_MNT_ELEVATION.ELEVATIONGRIDCOVERAGE.LAMB93` | BIL float32, 50 cm | Zones survolées (quasi-totalité de la métropole en 2026) | Relief, pied des murs |
 | MNS LiDAR HD | WMS raster `IGNF_LIDAR-HD_MNS_ELEVATION.ELEVATIONGRIDCOVERAGE.LAMB93` | BIL float32, 50 cm | Idem | Hauteurs et formes des toits, arbres, clôtures |
 | Adresse | `data.geopf.fr/geocodage/search` (Base adresse nationale) | JSON | France | Étiquette et point de vue depuis la rue |
+| Infrarouge couleur | WMS raster `ORTHOIMAGERY.ORTHOPHOTOS.IRC` | JPEG, 20 cm (canaux PIR, R, V) | France | Indice de végétation (NDVI) : végétal ou minéral au sol, petites constructions, véhicules |
+| OpenStreetMap | API `api.openstreetmap.org/api/0.6/map` (une boîte de la zone, en cache) | JSON | Inégale : passages piétons, stops, arrêts de bus, feux, piscines, portails | Mobilier et marquages ; licence ODbL, mention « © les contributeurs d'OpenStreetMap » |
 
 Points d'attention :
+
+- Règle de périmètre : seuls le site, les parcelles contiguës et celles d'en face (de l'autre
+  côté de la voie) sont modélisés ; le reste relève des perspectives.
+- L'orthophoto n'est plus drapée (floue de près) : elle sert, avec l'infrarouge et le LiDAR, à
+  classer le sol (pelouse, massif, gravier, terre, enrobé, dalles, eau) rendu en matériaux nets.
+- Pas de photographie à 5 cm (PCRS) sur Vernouillet : seule une zone test de l'Orne en a.
+- Overpass (requêtes OSM) est injoignable depuis l'environnement d'exécution ; l'API principale
+  d'OSM répond pour une petite boîte. Elle n'est pas faite pour un usage intensif : une requête
+  par site, mise en cache.
 
 - Le service raster accepte 5 010 px par côté : au-delà, les images sont tuilées.
 - Hors couverture LiDAR HD, le MNT et le MNS manquent : la génération s'arrête avec un message.

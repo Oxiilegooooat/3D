@@ -24,7 +24,7 @@ Img = NDArray[np.float64]
 TAILLE = 512
 
 ENDUITS = [(232, 222, 200), (222, 205, 178), (238, 233, 223), (214, 194, 165)]
-VOLETS = [(236, 236, 230), (146, 163, 148), (116, 138, 160), (112, 84, 62)]
+VOLETS = [(236, 236, 230), (146, 163, 148), (116, 138, 160), (112, 84, 62)]  # teintes des volets
 PORTES = [(118, 84, 56), (52, 78, 62), (62, 64, 68)]
 FEUILLAGES = [(64, 92, 44), (82, 110, 52), (58, 84, 48)]
 
@@ -177,65 +177,6 @@ def revetement(nom: str, rng: np.random.Generator, teinte: tuple[int, int, int])
     return c
 
 
-def _fenetre(
-    c: Couches,
-    rng: np.random.Generator,
-    style: str,
-    volet: tuple[int, int, int] | None,
-    largeur_m: float = 3.0,
-    hauteur_m: float = 3.0,
-) -> None:
-    """Peint une fenêtre centrée (et ses volets ou son coffre) sur une tuile d'une travée."""
-    t = TAILLE
-    yy, xx = np.mgrid[0:t, 0:t]
-    m_x = t / largeur_m
-    m_y = t / hauteur_m
-    if style == "activite":
-        x0, x1 = t * 0.12, t * 0.88
-        z0, z1 = hauteur_m - 1.6, hauteur_m - 0.6
-    else:
-        x0, x1 = t / 2 - 0.6 * m_x, t / 2 + 0.6 * m_x
-        z0, z1 = 0.95, 2.4
-    y0, y1 = t - z1 * m_y, t - z0 * m_y  # lignes (0 en haut)
-    ouverture = (xx >= x0) & (xx < x1) & (yy >= y0) & (yy < y1)
-    e = 0.06 * m_x
-    reflet = np.clip((yy - y0) / max(y1 - y0, 1), 0, 1)
-    ciel = np.dstack(
-        [0.28 + 0.25 * (1 - reflet), 0.34 + 0.25 * (1 - reflet), 0.42 + 0.22 * (1 - reflet)]
-    )
-    ciel *= (0.9 + 0.2 * bruit(rng, 4))[..., None]
-    c.peindre(ouverture, ciel, -1.0, 0.08, 0.4)
-    cadre = ouverture & ((xx < x0 + e) | (xx >= x1 - e) | (yy < y0 + e) | (yy >= y1 - e))
-    meneaux = ouverture & (np.abs(xx - (x0 + x1) / 2) < e / 2)
-    if style == "activite":
-        for k in range(1, 4):
-            meneaux |= ouverture & (np.abs(xx - (x0 + (x1 - x0) * k / 4)) < e / 2)
-    couleur_cadre = (60, 62, 66) if style == "activite" else (238, 238, 234)
-    c.peindre(cadre | meneaux, couleur_cadre, -0.4, 0.45)
-    if style != "activite":
-        appui = (
-            (xx >= x0 - 0.05 * m_x) & (xx < x1 + 0.05 * m_x) & (yy >= y1) & (yy < y1 + 0.06 * m_y)
-        )
-        c.peindre(appui, (222, 216, 204), 0.6, 0.7)
-        # Ombre portée de l'appui et du linteau.
-        ombre = (xx >= x0) & (xx < x1) & (yy >= y1 + 0.06 * m_y) & (yy < y1 + 0.12 * m_y)
-        c.couleur[ombre] *= 0.85
-    if volet is not None:
-        for cote in (-1, 1):
-            vx0 = x0 - 0.62 * m_x if cote < 0 else x1 + 0.02 * m_x
-            vx1 = vx0 + 0.6 * m_x
-            battant = (xx >= vx0) & (xx < vx1) & (yy >= y0) & (yy < y1)
-            lames = ((yy - y0) % (0.07 * m_y)) < 0.018 * m_y
-            teinte = np.broadcast_to(
-                np.array(volet, dtype=np.float64) / 255, c.couleur.shape
-            ).copy()
-            teinte[lames] *= 0.78
-            c.peindre(battant, teinte, np.where(lames, 0.3, 0.55), 0.6)
-    elif style == "collectif":
-        coffre = (xx >= x0) & (xx < x1) & (yy >= y0 - 0.18 * m_y) & (yy < y0)
-        c.peindre(coffre, (225, 225, 222), 0.4, 0.5)
-
-
 def _texture_couches(
     c: Couches, dossier: Path, nom: str, force_normale: float = 3.0
 ) -> tuple[str, str, str]:
@@ -265,43 +206,27 @@ def _avec_textures(nom: str, c: Couches, dossier: Path, **kw: Any) -> Materiau:
 
 
 def facade(nom: str, dossier: Path) -> Materiau:
-    """`facade_<style>_<revetement>[_<variante>]_<fenetres|pleine>` (variante : teinte de
-    l'enduit, couleur des volets), `facade_activite_<v>_…`, `facade_annexe_<v>_pleine`,
-    `facade_projet_pleine`."""
+    """`facade_enduit_<v>` (v : teinte), `facade_<pierre|meuliere|brique|bois>`,
+    `facade_activite_<v>` (bardage), `facade_annexe_<v>`, `facade_projet`. Tuile de 3 m."""
     morceaux = nom.split("_")
-    bande = morceaux[-1]
-    style = morceaux[1]
+    famille = morceaux[1]
+    v = int(morceaux[2]) if len(morceaux) > 2 else 0
     rng = _rng(nom)
-    if style == "activite":
-        v = int(morceaux[2])
+    if famille == "activite":
         c = revetement("bardage", rng, [(196, 198, 196), (205, 198, 182)][v])
-        if bande == "fenetres":
-            _fenetre(c, rng, "activite", None, 5.1, 5.0)
-        return _avec_textures(nom, c, dossier, double_face=True)
-    if style == "annexe":
-        v = int(morceaux[2])
-        return _avec_textures(
-            nom,
-            revetement("enduit", rng, [(206, 200, 188), (186, 176, 160)][v]),
-            dossier,
-            double_face=True,
-        )
-    if style == "projet":
-        return _avec_textures(
-            nom, revetement("projet", rng, (241, 239, 233)), dossier, double_face=True
-        )
-    rev = morceaux[2]
-    v = int(morceaux[3]) if len(morceaux) == 5 else 0
-    teinte = {
-        "enduit": ENDUITS[v],
-        "pierre": (208, 194, 168),
-        "meuliere": (186, 152, 112),
-        "brique": (158, 82, 58),
-        "bois": (148, 108, 72),
-    }[rev]
-    c = revetement(rev, rng, teinte)
-    if bande == "fenetres":
-        _fenetre(c, rng, style, VOLETS[v] if style == "maison" else None)
+    elif famille == "annexe":
+        c = revetement("enduit", rng, [(206, 200, 188), (186, 176, 160)][v])
+    elif famille == "projet":
+        c = revetement("projet", rng, (241, 239, 233))
+    else:
+        teinte = {
+            "enduit": ENDUITS[v],
+            "pierre": (208, 194, 168),
+            "meuliere": (186, 152, 112),
+            "brique": (158, 82, 58),
+            "bois": (148, 108, 72),
+        }[famille]
+        c = revetement(famille, rng, teinte)
     return _avec_textures(nom, c, dossier, double_face=True)
 
 
@@ -388,6 +313,70 @@ def simple(nom: str, dossier: Path) -> Materiau:
         poignee = (np.abs(xx - 0.85) < 0.02) & (np.abs(yy - 0.5) < 0.04)
         c.peindre(poignee, (190, 180, 150), 1.0, 0.3, 0.9)
         return _avec_textures(nom, c, dossier)
+    if nom in ("asphalte", "sol_enrobe"):
+        return (
+            simple("asphalte", dossier)
+            if nom == "asphalte"
+            else _renommer(simple("asphalte", dossier), nom)
+        )
+    if nom == "sol_pelouse":
+        fin = rng.random((t, t))
+        brins = ndimage.gaussian_filter(fin, (2.5, 0.6), mode="wrap")
+        variation = fbm(rng, ((3, 0.4), (12, 0.3))) * 0.6 + brins * 0.4
+        c = Couches.unie(_couleur((88, 124, 56), variation, 0.55), 0.95)
+        c.hauteur = brins
+        return _avec_textures(nom, c, dossier, force=5.0)
+    if nom in ("sol_gravier", "sol_base"):
+        yy, xx = np.mgrid[0:t, 0:t] / t * 2.0
+        n = 5000
+        graines = rng.random((n, 2)) * 2.0
+        decalages = np.array([(ox, oy) for ox in (-2, 0, 2) for oy in (-2, 0, 2)])
+        arbre = cKDTree((graines[None] + decalages[:, None]).reshape(-1, 2))
+        dist, idx = arbre.query(np.column_stack([xx.ravel(), yy.ravel()]), k=2)
+        bord = (dist[:, 1] - dist[:, 0]).reshape(t, t)
+        teinte_cailloux = ((idx[:, 0] % n) % 11 / 11).reshape(t, t)
+        base = (188, 174, 148) if nom == "sol_gravier" else (178, 170, 152)
+        c = Couches.unie(_couleur(base, teinte_cailloux * 0.7 + fbm(rng) * 0.3, 0.4), 0.95)
+        c.hauteur = np.clip(bord * 40, 0, 1)
+        c.couleur *= (0.82 + 0.18 * c.hauteur)[..., None]
+        return _avec_textures(nom, c, dossier, force=4.0)
+    if nom == "sol_terre":
+        mottes = fbm(rng, ((6, 0.3), (24, 0.4), (96, 0.3)))
+        c = Couches.unie(_couleur((132, 104, 76), mottes, 0.5), 0.97)
+        c.hauteur = mottes
+        return _avec_textures(nom, c, dossier, force=4.0)
+    if nom == "sol_dalles":
+        yy, xx = np.mgrid[0:t, 0:t] / t * 2.0
+        ids = (xx // 0.5).astype(int) * 7 + (yy // 0.5).astype(int) * 13
+        variation = (ids % 9) / 9 * 0.5 + fbm(rng) * 0.5
+        c = Couches.unie(_couleur((184, 178, 166), variation, 0.15), 0.85)
+        joint = ((xx % 0.5) < 0.008) | ((yy % 0.5) < 0.008)
+        c.peindre(joint, (150, 146, 138), -0.6, 0.95)
+        return _avec_textures(nom, c, dossier)
+    if nom == "carrelage_piscine":
+        yy, xx = np.mgrid[0:t, 0:t] / t * 0.5
+        c = Couches.unie(_couleur((80, 160, 190), bruit(rng, 16), 0.12), 0.3)
+        joint = ((xx % 0.05) < 0.004) | ((yy % 0.05) < 0.004)
+        c.peindre(joint, (220, 228, 230), -0.5, 0.6)
+        return _avec_textures(nom, c, dossier)
+    if nom == "massif":
+        c = Couches.unie(
+            _couleur((66, 96, 46), fbm(rng, ((8, 0.4), (32, 0.3), (128, 0.3))), 0.6), 0.9
+        )
+        c.hauteur = fbm(rng, ((32, 0.5), (128, 0.5)))
+        return _avec_textures(nom, c, dossier, force=6.0)
+    if nom.startswith("panneau_") and nom != "panneau_dos":
+        return Materiau(nom, texture=_panneau(nom.split("_")[1], dossier), rugosite=0.5)
+    if nom.startswith("carrosserie_"):
+        teintes = [
+            (235, 235, 232),
+            (30, 32, 36),
+            (150, 152, 156),
+            (190, 192, 195),
+            (40, 60, 100),
+            (150, 30, 30),
+        ]
+        return Materiau(nom, couleur=srgb(teintes[int(nom.split("_")[1])]), rugosite=0.3, metal=0.5)
     if nom == "mur_cloture":
         return _avec_textures(
             nom, revetement("pierre", rng, (198, 188, 168)), dossier, double_face=True
@@ -426,10 +415,74 @@ def simple(nom: str, dossier: Path) -> Materiau:
         "sous_toiture": lambda: Materiau(nom, couleur=srgb((226, 220, 208)), rugosite=0.85),
         "garde_corps": lambda: Materiau(nom, couleur=srgb((52, 54, 58)), rugosite=0.4, metal=0.6),
         "projet_volume": lambda: Materiau(nom, couleur=srgb((241, 239, 233)), rugosite=0.8),
+        "margelle": lambda: Materiau(nom, couleur=srgb((224, 216, 200)), rugosite=0.8),
+        "eau_piscine": lambda: Materiau(
+            nom, couleur=srgb((70, 170, 196)), rugosite=0.04, metal=0.15
+        ),
+        "chaperon": lambda: Materiau(nom, couleur=srgb((214, 208, 196)), rugosite=0.8),
+        "grille": lambda: Materiau(nom, couleur=srgb((44, 50, 48)), rugosite=0.45, metal=0.5),
+        "grillage": lambda: Materiau(
+            nom, couleur=srgb((56, 86, 58), 0.32), rugosite=0.6, double_face=True
+        ),
+        "poteau_grillage": lambda: Materiau(nom, couleur=srgb((56, 82, 58)), rugosite=0.5),
+        "metal_mobilier": lambda: Materiau(
+            nom, couleur=srgb((62, 64, 68)), rugosite=0.45, metal=0.5
+        ),
+        "lampe": lambda: Materiau(nom, couleur=srgb((255, 244, 222)), rugosite=0.3, emission=1.5),
+        "panneau_dos": lambda: Materiau(
+            nom, couleur=srgb((150, 152, 154)), rugosite=0.5, metal=0.5
+        ),
+        "feu_boitier": lambda: Materiau(nom, couleur=srgb((30, 32, 34)), rugosite=0.5),
+        "feu_rouge": lambda: Materiau(nom, couleur=srgb((222, 40, 30)), rugosite=0.3, emission=1.5),
+        "feu_orange": lambda: Materiau(nom, couleur=srgb((120, 80, 20)), rugosite=0.3),
+        "feu_vert": lambda: Materiau(nom, couleur=srgb((20, 90, 50)), rugosite=0.3),
+        "bois_banc": lambda: Materiau(nom, couleur=srgb((140, 100, 66)), rugosite=0.8),
+        "vitre_auto": lambda: Materiau(nom, couleur=srgb((30, 38, 46)), rugosite=0.06, metal=0.5),
+        "pneu": lambda: Materiau(nom, couleur=srgb((26, 26, 26)), rugosite=0.9),
     }
     if nom not in fixes:
         raise KeyError(f"matériau inconnu : {nom}")
     return fixes[nom]()
+
+
+def _renommer(m: Materiau, nom: str) -> Materiau:
+    m.nom = nom
+    return m
+
+
+def _panneau(nature: str, dossier: Path) -> str:
+    """Face d'un panneau (stop, cédez-le-passage, bus), dans sa boîte englobante."""
+    from PIL import ImageDraw, ImageFont
+
+    fichier = f"panneau_{nature}.png"
+    t = 256
+    image = Image.new("RGB", (t, t), (150, 152, 154))
+    d = ImageDraw.Draw(image)
+    if nature == "stop":
+        a = np.radians(22.5) + np.arange(8) * np.pi / 4
+        pts = [
+            (
+                t / 2 + t / 2 * np.cos(x) / np.cos(np.pi / 8),
+                t / 2 - t / 2 * np.sin(x) / np.cos(np.pi / 8),
+            )
+            for x in a
+        ]
+        d.polygon(pts, fill=(255, 255, 255))
+        interieur = [(t / 2 + (px - t / 2) * 0.9, t / 2 + (py - t / 2) * 0.9) for px, py in pts]
+        d.polygon(interieur, fill=(200, 30, 36))
+        police = ImageFont.load_default(size=64)
+        d.text((t / 2, t / 2), "STOP", fill=(255, 255, 255), font=police, anchor="mm")
+    elif nature == "cedez":
+        d.polygon([(0, 0), (t, 0), (t / 2, t)], fill=(200, 30, 36))
+        d.polygon(
+            [(t * 0.16, t * 0.08), (t * 0.84, t * 0.08), (t / 2, t * 0.8)], fill=(255, 255, 255)
+        )
+    else:
+        d.rectangle((0, 0, t, t), fill=(30, 80, 160))
+        police = ImageFont.load_default(size=72)
+        d.text((t / 2, t / 2), "BUS", fill=(255, 255, 255), font=police, anchor="mm")
+    image.save(dossier / fichier)
+    return fichier
 
 
 def catalogue(

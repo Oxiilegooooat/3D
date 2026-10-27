@@ -29,6 +29,8 @@ WMS = "https://data.geopf.fr/wms-r"
 GEOCODAGE = "https://data.geopf.fr/geocodage/search"
 
 COUCHE_ORTHO = "HR.ORTHOIMAGERY.ORTHOPHOTOS"
+COUCHE_IRC = "ORTHOIMAGERY.ORTHOPHOTOS.IRC"
+OSM = "https://api.openstreetmap.org/api/0.6/map.json"
 COUCHE_MNT = "IGNF_LIDAR-HD_MNT_ELEVATION.ELEVATIONGRIDCOVERAGE.LAMB93"
 COUCHE_MNS = "IGNF_LIDAR-HD_MNS_ELEVATION.ELEVATIONGRIDCOVERAGE.LAMB93"
 
@@ -71,9 +73,17 @@ class Client:
     def __init__(self, cache: Path, force: bool = False) -> None:
         self.cache = cache
         self.force = force
-        self.http = httpx.Client(timeout=120, follow_redirects=True)
+        self.http = httpx.Client(
+            timeout=120,
+            follow_redirects=True,
+            headers={"User-Agent": "maquette-3d (open data, usage ponctuel)"},
+        )
 
-    def _telecharger(self, url: str, params: dict[str, Any], fichier: Path) -> bytes:
+    def telecharger(self, url: str, params: dict[str, Any], fichier: Path) -> bytes:
+        """Contenu de `url` ; le nom du fichier en cache porte l'empreinte de la requête, pour
+        qu'une autre emprise ne relise jamais un ancien fichier."""
+        cle = hashlib.sha1(f"{url}?{sorted(params.items())}".encode()).hexdigest()[:10]
+        fichier = fichier.with_name(f"{fichier.stem}_{cle}{fichier.suffix}")
         if fichier.exists() and not self.force:
             return fichier.read_bytes()
         fichier.parent.mkdir(parents=True, exist_ok=True)
@@ -123,7 +133,7 @@ class Client:
                 params["BBOX"] = ",".join(f"{v:.2f}" for v in emprise) + ",EPSG:2154"
             if filtre is not None:
                 params["CQL_FILTER"] = filtre
-            brut = self._telecharger(WFS, params, self.cache / "wfs" / f"{nom}_{page}.json")
+            brut = self.telecharger(WFS, params, self.cache / "wfs" / f"{nom}_{page}.json")
             lot = json.loads(brut)["features"]
             entites.extend(lot)
             if len(lot) < 1000:
@@ -145,7 +155,7 @@ class Client:
             "HEIGHT": hauteur,
             "FORMAT": format_,
         }
-        return self._telecharger(WMS, params, fichier)
+        return self.telecharger(WMS, params, fichier)
 
     def _tuiles(
         self, emprise: Emprise, resolution: float
@@ -159,8 +169,10 @@ class Client:
                 tuiles.append((r0, c0, min(TUILE_MAX_PX, h - r0), min(TUILE_MAX_PX, w - c0)))
         return w, h, tuiles
 
-    def ortho(self, emprise: Emprise, resolution: float) -> Image.Image:
-        """Orthophoto RVB de l'emprise, assemblée par tuiles."""
+    def ortho(
+        self, emprise: Emprise, resolution: float, couche: str = COUCHE_ORTHO, nom: str = "ortho"
+    ) -> Image.Image:
+        """Orthophoto (RVB, ou infrarouge couleur avec `COUCHE_IRC`), assemblée par tuiles."""
         w, h, tuiles = self._tuiles(emprise, resolution)
         image = Image.new("RGB", (w, h))
         xmin, _, _, ymax = emprise
@@ -172,12 +184,12 @@ class Client:
                 ymax - r0 * resolution,
             )
             brut = self._wms(
-                COUCHE_ORTHO,
+                couche,
                 e,
                 tw,
                 th,
                 "image/jpeg",
-                self.cache / "wms" / f"ortho_{resolution}_{r0}_{c0}.jpg",
+                self.cache / "wms" / f"{nom}_{resolution}_{r0}_{c0}.jpg",
             )
             image.paste(Image.open(io.BytesIO(brut)).convert("RGB"), (c0, r0))
         return image
@@ -214,6 +226,14 @@ class Client:
             _, (ri, ci) = ndimage.distance_transform_edt(trous, return_indices=True)
             valeurs = valeurs[ri, ci]
         return Grille(emprise, resolution, valeurs)
+
+    def osm(self, ouest: float, sud: float, est: float, nord: float) -> list[dict[str, Any]]:
+        """Éléments OpenStreetMap d'une petite boîte (WGS84), via l'API principale (une requête
+        par site, en cache : Overpass est injoignable depuis l'environnement d'exécution)."""
+        params = {"bbox": f"{ouest:.6f},{sud:.6f},{est:.6f},{nord:.6f}"}
+        brut = self.telecharger(OSM, params, self.cache / "osm" / "carte.json")
+        elements: list[dict[str, Any]] = json.loads(brut)["elements"]
+        return elements
 
     def geocoder(self, adresse: str) -> tuple[float, float] | None:
         """Coordonnées Lambert 93 d'une adresse (Base adresse nationale)."""

@@ -180,9 +180,18 @@ if RENDU:
     ciel.sun_disc = False
     ciel.sun_elevation = math.radians(38)
     ciel.sun_rotation = math.radians(200)
-    monde.node_tree.links.new(
-        ciel.outputs["Color"], monde.node_tree.nodes["Background"].inputs["Color"]
-    )
+    noeuds, liens_m = monde.node_tree.nodes, monde.node_tree.links
+    liens_m.new(ciel.outputs["Color"], noeuds["Background"].inputs["Color"])
+    # La caméra voit un fond clair de maquette ; l'éclairage vient du ciel.
+    fond = noeuds.new("ShaderNodeBackground")
+    fond.inputs["Color"].default_value = (0.78, 0.82, 0.86, 1.0)
+    fond.inputs["Strength"].default_value = 1.0
+    chemin = noeuds.new("ShaderNodeLightPath")
+    melange = noeuds.new("ShaderNodeMixShader")
+    liens_m.new(chemin.outputs["Is Camera Ray"], melange.inputs["Fac"])
+    liens_m.new(noeuds["Background"].outputs["Background"], melange.inputs[1])
+    liens_m.new(fond.outputs["Background"], melange.inputs[2])
+    liens_m.new(melange.outputs["Shader"], noeuds["World Output"].inputs["Surface"])
     monde.node_tree.nodes["Background"].inputs["Strength"].default_value = 0.22
     scene.world = monde
     soleil = bpy.data.objects.new("soleil", bpy.data.lights.new("soleil", "SUN"))
@@ -220,7 +229,8 @@ if RENDU:
         collections["projet"].hide_render = True
     if "existant" in collections and infos["presentation"] == "projet":
         collections["existant"].hide_render = True
-    rendre("vue_aerienne", (cx - 85, cy - 110, cz + 95), 40)
+    recul = infos.get("rayon_zone", 140) / 140
+    rendre("vue_aerienne", (cx - 85 * recul, cy - 110 * recul, cz + 95 * recul), 40)
     if infos.get("vue_rue"):
         for ob in collections.get("limites", bpy.data.collections.new("vide")).objects:
             if any(m and m.name.startswith("voile") for m in ob.data.materials):

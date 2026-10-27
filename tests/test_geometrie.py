@@ -164,7 +164,7 @@ def test_facade_detaillee_percee() -> None:
     assert len(murs["verre"]) >= 8  # deux étages de fenêtres sur les longs pans
     assert any(k.startswith("porte_") for k in murs)
     assert any(k.startswith("volet_") for k in murs)
-    dessus, dessous = bt.toit(b, anneaux, 0.5, terrain, lignes, 0.4, 0.2)
+    dessus, dessous = bt.toit(b, anneaux, 0.5, lignes, 0.4, 0.2)
     assert len(dessus) and len(dessous)
     # Le débord descend sous l'égout.
     assert dessus.sommets[:, 2].min() < b.z_sol + b.h_gouttiere

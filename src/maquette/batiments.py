@@ -1,10 +1,7 @@
 """Bâtiments : hauteurs et toits réels (LiDAR HD), façades par étage, ouvertures en 3D.
 
-Deux niveaux de détail :
-- **contexte** : toit maillé sur le MNS et texturé par l'orthophoto, façades texturées
-  (une fenêtre par travée et par étage, mitoyens aveugles) ;
-- **détail** (bâtiments du site et du projet) : murs percés de vraies ouvertures (tableaux,
-  vitrages, menuiseries, appuis, volets, portes), toit à matériau propre.
+Murs percés de vraies ouvertures (tableaux, vitrages, menuiseries, appuis, volets, portes),
+murs mitoyens aveugles, toit paramétrique avec débords et couverture déduite de l'orthophoto.
 
 Les hauteurs et les toits sont mesurés. La disposition des fenêtres et des balcons est
 **indicative** : aucune source ouverte ne décrit les façades.
@@ -22,7 +19,6 @@ import numpy as np
 import shapely
 from numpy.typing import NDArray
 from PIL import Image
-from scipy import ndimage
 from shapely.geometry import Point, Polygon
 from shapely.geometry.polygon import orient
 
@@ -31,7 +27,6 @@ from maquette.maillage import (
     Maillage,
     Tableau,
     boite,
-    decouper_bande,
     densifier,
     fusionner,
     orienter_vers_le_haut,
@@ -56,7 +51,6 @@ class Batiment:
     z_base: float | None = None  # pied des murs imposé (attique posé sur un toit)
     z_toit_plat: float | None = None
     modele: ModeleToit | None = None
-    toit: Grille | None = None
     hauteur_source: str = "lidar"
     h_gouttiere: float = 3.0
     etages: int = 1
@@ -73,10 +67,8 @@ class Batiment:
     def hauteur_toit(self, xy: Tableau) -> Tableau:
         if self.modele is not None:
             return np.maximum(self.modele.z(xy), self.z_sol + 2.0)
-        if self.z_toit_plat is not None or self.toit is None:
-            z = self.z_toit_plat if self.z_toit_plat is not None else self.z_sol + self.h_gouttiere
-            return np.full(len(xy), z)
-        return np.maximum(self.toit.echantillonner(xy[:, 0], xy[:, 1]), self.z_sol + 2.0)
+        z = self.z_toit_plat if self.z_toit_plat is not None else self.z_sol + self.h_gouttiere
+        return np.full(len(xy), z)
 
 
 def _hash(cle: str, n: int) -> int:
@@ -141,25 +133,17 @@ def mesurer(bat: Batiment, mns: Grille, terrain: Terrain, cfg: dict[str, Any]) -
         elif modele is not None:
             bat.modele = modele
         else:
-            plafond = haut + 0.5
-            s = np.minimum(np.where(masque, sous, np.nan), plafond)
-            _, (ri, ci) = ndimage.distance_transform_edt(~masque, return_indices=True)
-            s = s[ri, ci]
-            s = ndimage.median_filter(s, size=3, mode="nearest")
-            s = ndimage.gaussian_filter(s, 0.7, mode="nearest")
-            emprise_sous = (xmin + c0 * res, ymax - r1 * res, xmin + c1 * res, ymax - r0 * res)
-            bat.toit = Grille(emprise_sous, res, s.astype(np.float32))
+            bat.z_toit_plat = float(np.percentile(valeurs, 70))
 
     bord = np.asarray(shapely.segmentize(bat.emprise.exterior, 0.5).coords)[:, :2]
     z_bord = bat.hauteur_toit(bord)
     bat.h_gouttiere = max(float(np.percentile(z_bord, 10)) - bat.z_sol, 2.2)
-    z_max = float(z_bord.max()) if bat.toit is None else float(bat.toit.valeurs.max())
+    interieur = np.column_stack([gx[masque], gy[masque]]) if masque.any() else bord
+    z_max = max(float(z_bord.max()), float(bat.hauteur_toit(interieur).max()))
     bat.infos["hauteur_faitage"] = round(z_max - bat.z_sol, 1)
     bat.infos["hauteur_gouttiere"] = round(bat.h_gouttiere, 1)
     bat.infos["toit_plat"] = bat.z_toit_plat is not None
-    bat.infos["forme_toit"] = (
-        "plat" if bat.z_toit_plat is not None else bat.modele.nature if bat.modele else "complexe"
-    )
+    bat.infos["forme_toit"] = bat.modele.nature if bat.modele else "plat"
     bat.infos["hauteur_source"] = bat.hauteur_source
 
 
@@ -226,17 +210,32 @@ def teinter_toit(bat: Batiment, ortho: Image.Image, terrain: Terrain) -> None:
     py = np.clip(((1 - uv[:, 1]) * h).astype(int), 0, h - 1)
     tableau = np.asarray(ortho)
     rgb = np.median(tableau[py, px].astype(np.float64), axis=0) / 255
-    bat.teinte_toit = (float(rgb[0]), float(rgb[1]), float(rgb[2]))
     r, g, b = rgb
-    luminance = 0.3 * r + 0.59 * g + 0.11 * b
+    luminance = float(0.3 * r + 0.59 * g + 0.11 * b)
+    # La photo donne la clarté et la famille de couverture ; la teinte est ramenée à une
+    # couleur plausible (ombres et reflets bleutés faussent la teinte brute).
     if bat.z_toit_plat is not None:
         bat.type_toit = "terrasse"
+        teinte = (0.62, 0.62, 0.6)
+        clarte = luminance / 0.45
     elif r > g * 1.12 and r > b * 1.2:
         bat.type_toit = "tuiles"
+        teinte = (0.72, 0.42, 0.31)
+        clarte = luminance / 0.42
     elif luminance < 0.33:
         bat.type_toit = "ardoise"
+        teinte = (0.38, 0.41, 0.45)
+        clarte = luminance / 0.28
     else:
         bat.type_toit = "bac_acier"
+        teinte = (0.66, 0.68, 0.7)
+        clarte = luminance / 0.5
+    k = float(np.clip(clarte, 0.75, 1.2))
+    bat.teinte_toit = (
+        float(np.clip(teinte[0] * k, 0, 1)),
+        float(np.clip(teinte[1] * k, 0, 1)),
+        float(np.clip(teinte[2] * k, 0, 1)),
+    )
 
 
 # --------------------------------------------------------------------------- façades
@@ -298,7 +297,6 @@ def toit(
     bat: Batiment,
     anneaux_: list[Anneau],
     pas: float,
-    terrain: Terrain,
     lignes: list[Tableau] | None = None,
     debord: float = 0.0,
     epaisseur: float = 0.2,
@@ -330,12 +328,10 @@ def toit(
         return Maillage.vide(), Maillage.vide()
     faces = orienter_vers_le_haut(xy, faces)
     z = bat.hauteur_toit(xy)
-    if bat.detail:
-        angle = _axe_principal(bat.emprise)
-        c, s = np.cos(-angle), np.sin(-angle)
-        uv = np.column_stack([xy[:, 0] * c - xy[:, 1] * s, xy[:, 0] * s + xy[:, 1] * c]) / 2.0
-    else:
-        uv = terrain.uv_ortho(xy)
+    # Rangs de tuiles parallèles au faîtage (axe principal de l'emprise), tuile de 2 m.
+    angle = _axe_principal(bat.emprise)
+    c, s = np.cos(-angle), np.sin(-angle)
+    uv = np.column_stack([xy[:, 0] * c - xy[:, 1] * s, xy[:, 0] * s + xy[:, 1] * c]) / 2.0
     dessus = Maillage(np.column_stack([xy, z]), faces, uv)
     if not (pente and debord > 0):
         return dessus, Maillage.vide()
@@ -360,101 +356,16 @@ def _axe_principal(poly: Polygon) -> float:
     return float(np.arctan2(long[1], long[0]))
 
 
-def materiau_mur(bat: Batiment, bande: str = "pleine") -> str:
-    """Nom du matériau de façade (voir `textures.facade`)."""
+def materiau_mur(bat: Batiment) -> str:
+    """Nom du matériau de façade (voir `textures.facade`) ; la variante d'un enduit est sa
+    teinte."""
     if bat.projet:
-        return "facade_projet_pleine"
-    if bat.style == "activite":
-        return f"facade_activite_{bat.variante % 2}_{bande}"
-    if bat.style == "annexe":
-        return f"facade_annexe_{bat.variante % 2}_pleine"
-    if bande == "pleine" and bat.revetement != "enduit":
-        return f"facade_{bat.style}_{bat.revetement}_pleine"
-    return f"facade_{bat.style}_{bat.revetement}_{bat.variante}_{bande}"
-
-
-def murs_contexte(
-    bat: Batiment,
-    anneaux_: list[Anneau],
-    mitoyens: list[NDArray[np.bool_]],
-    terrain: Terrain,
-    cfg: dict[str, Any],
-) -> dict[str, list[Maillage]]:
-    """Murs texturés : bande « fenêtres » jusqu'à la gouttière, « pleine » au-dessus."""
-    cb = cfg["batiments"]
-    travee = cb["largeur_travee"] * (1.7 if bat.style == "activite" else 1.0)
-    z_haut_fenetres = bat.z_sol + bat.etages * bat.h_etage
-    sortie: dict[str, list[Maillage]] = defaultdict(list)
-    for anneau, mitoyen in zip(anneaux_, mitoyens, strict=True):
-        pts = anneau.points
-        z_bas = terrain.hauteur(pts) - cb["enfouissement"]
-        z_haut = bat.hauteur_toit(pts) + bat.acrotere
-        m = len(pts)
-        for i in range(m):
-            j = (i + 1) % m
-            arete = anneau.aretes[i]
-            longueur = anneau.longueurs[arete]
-            s0 = anneau.abscisses[i]
-            seg = float(np.hypot(*(pts[j] - pts[i])))
-            poly = [(0.0, z_bas[i]), (seg, z_bas[j]), (seg, z_haut[j]), (0.0, z_haut[i])]
-            travees = round(longueur / travee) if longueur >= 1.8 else 0
-            aveugle = bool(mitoyen[arete]) or travees == 0 or bat.style == "annexe"
-
-            def uv_fenetres(
-                s: float, z: float, s0: float = s0, n: int = travees, longueur: float = longueur
-            ) -> tuple[float, float]:
-                return ((s0 + s) * n / longueur, (z - bat.z_sol) / bat.h_etage)
-
-            def uv_plein(s: float, z: float, s0: float = s0) -> tuple[float, float]:
-                return ((s0 + s) / 3.0, (z - bat.z_sol) / 3.0)
-
-            if aveugle:
-                sortie[materiau_mur(bat)].append(quad_mur(pts[i], pts[j], poly, uv_plein))
-                continue
-            bas = decouper_bande(poly, -1e9, z_haut_fenetres)
-            haut = decouper_bande(poly, z_haut_fenetres, 1e9)
-            sortie[materiau_mur(bat, "fenetres")].append(quad_mur(pts[i], pts[j], bas, uv_fenetres))
-            sortie[materiau_mur(bat)].append(quad_mur(pts[i], pts[j], haut, uv_plein))
-    return sortie
-
-
-def balcons_contexte(
-    bat: Batiment, anneaux_: list[Anneau], mitoyens: list[NDArray[np.bool_]], cfg: dict[str, Any]
-) -> dict[str, list[Maillage]]:
-    """Balcons indicatifs des collectifs : une dalle et un garde-corps par travée, sur les
-    deux plus longues façades libres, à partir du premier étage."""
-    if not bat.balcons or bat.etages < 2:
-        return {}
-    cd = cfg["detail"]
-    travee = cfg["batiments"]["largeur_travee"]
-    sortie: dict[str, list[Maillage]] = defaultdict(list)
-    anneau, mitoyen = anneaux_[0], mitoyens[0]
-    libres = [
-        i for i in range(len(anneau.longueurs)) if not mitoyen[i] and anneau.longueurs[i] >= 6
-    ]
-    for arete in sorted(libres, key=lambda i: -anneau.longueurs[i])[:2]:
-        a = anneau.origines[arete]
-        b = anneau.origines[(arete + 1) % len(anneau.origines)]
-        longueur = anneau.longueurs[arete]
-        u = (b - a) / longueur
-        ext = np.array([u[1], -u[0]])
-        n = round(longueur / travee)
-        if n < 2:
-            continue
-        for etage in range(1, bat.etages):
-            z = bat.z_sol + etage * bat.h_etage
-            for k in range(n):
-                if k % 2:
-                    continue
-                c = a + u * (k + 0.5) * longueur / n + ext * cd["balcon_profondeur"] / 2
-                largeur = longueur / n * 0.85
-                centre = np.array([c[0], c[1], z - 0.15])
-                sortie["beton_clair"].append(
-                    boite(centre, -u, largeur, cd["balcon_profondeur"], 0.15)
-                )
-                avant = np.array([*(c + ext * (cd["balcon_profondeur"] / 2 - 0.03)), z])
-                sortie["garde_corps"].append(boite(avant, -u, largeur, 0.04, cd["garde_corps"]))
-    return sortie
+        return "facade_projet"
+    if bat.style in ("activite", "annexe"):
+        return f"facade_{bat.style}_{bat.variante % 2}"
+    if bat.revetement != "enduit":
+        return f"facade_{bat.revetement}"
+    return f"facade_enduit_{bat.variante}"
 
 
 # --------------------------------------------------------------------------- détail
