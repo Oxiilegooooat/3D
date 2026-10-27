@@ -1,0 +1,58 @@
+# Paramètres des maquettes (aucune valeur métier en dur dans le code).
+
+contexte:
+  rayon: 150            # m de contexte autour de l'emprise du site
+  pas_terrain: 2.0      # m, maillage du terrain (MNT LiDAR HD)
+  epaisseur_socle: 4.0  # m sous le point le plus bas : socle façon maquette d'architecte
+
+sources:
+  resolution_ortho: 0.1   # m/pixel (BD ORTHO servie par la Géoplateforme)
+  resolution_lidar: 0.5   # m/pixel (MNT et MNS LiDAR HD)
+
+batiments:
+  hauteur_etage: 3.0          # m, hauteur d'étage par défaut (même valeur que TraqueSoc)
+  hauteur_etage_min: 2.5
+  hauteur_etage_max: 3.6
+  hauteur_defaut: 6.0         # m si ni LiDAR ni BD TOPO
+  largeur_travee: 3.0         # m, une fenêtre par travée
+  erosion_lidar: 0.6          # m, retrait de l'emprise pour lire le MNS (décalage cadastre / LiDAR)
+  ecart_toit_plat: 0.25       # m, écart-type du MNS sous lequel le toit est plat
+  acrotere: 0.4               # m au-dessus des toits plats des collectifs et bâtiments d'activité
+  pas_toit_contexte: 1.0      # m, maillage des toits du contexte
+  pas_toit_detail: 0.5        # m, maillage des toits du site et du projet
+  enfouissement: 0.6          # m, les murs descendent sous le terrain (pas de jour en pente)
+  debord_toit: 0.4            # m, débord des toits en pente (égout et rives)
+  epaisseur_toit: 0.2         # m, épaisseur visible en rive
+
+detail:                       # bâtiments du site et du projet : ouvertures en 3D
+  fenetre_largeur: 1.2
+  fenetre_hauteur: 1.45
+  allege: 0.95                # m, hauteur de l'appui au-dessus du plancher
+  profondeur_tableau: 0.18    # m, retrait du vitrage dans le mur
+  porte_largeur: 1.0
+  porte_hauteur: 2.2
+  porte_activite_largeur: 4.0
+  porte_activite_hauteur: 4.0
+  balcon_profondeur: 1.3
+  garde_corps: 1.0
+
+voirie:
+  largeur_defaut: { "Route à 1 chaussée": 5.0, "Route à 2 chaussées": 10.0, "Rond-point": 6.0,
+                    "Bretelle": 4.0, "Route empierrée": 3.0, "Chemin": 2.5, "Sentier": 1.2,
+                    "Escalier": 1.5, "Piste cyclable": 2.0 }
+  bande_trottoir: 6.0         # m au-delà de la chaussée pris dans le domaine non cadastré
+  hauteur_bordure: 0.14
+  surelevation_chaussee: 0.04
+
+vegetation:
+  hauteur_min: 2.5            # m au-dessus du sol (MNS − MNT)
+  distance_min: 3.0           # m entre deux arbres
+  marge_batiment: 1.5         # m autour des bâtiments, pas d'arbre
+  arbres_max: 1500
+
+# Charte Constructa
+couleurs:
+  bleu_fonce: "#173A52"
+  bleu: "#377DA0"
+  taupe: "#A39382"
+  creme: "#EDE6D6"

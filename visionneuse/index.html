@@ -1,0 +1,508 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Maquette 3D</title>
+<style>
+  :root {
+    --bleu-fonce: #173A52; --bleu: #377DA0; --taupe: #A39382; --creme: #EDE6D6;
+    --fond: #E9EEF2; --carte: rgba(255, 253, 248, 0.94); --texte: #1E2B33; --doux: #5B6B75;
+    --bord: rgba(23, 58, 82, 0.14); --actif: #377DA0; --actif-texte: #fff;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --fond: #0F1A22; --carte: rgba(20, 32, 41, 0.94); --texte: #E8EEF2; --doux: #9DB0BC;
+      --bord: rgba(237, 230, 214, 0.16);
+    }
+  }
+  :root[data-theme="dark"] {
+    --fond: #0F1A22; --carte: rgba(20, 32, 41, 0.94); --texte: #E8EEF2; --doux: #9DB0BC;
+    --bord: rgba(237, 230, 214, 0.16);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: var(--fond); color: var(--texte);
+    font-family: Arial, Helvetica, sans-serif; font-size: 14px; }
+  #vue { position: fixed; inset: 0; touch-action: none; }
+  #vue canvas { display: block; }
+  .carte { background: var(--carte); border: 1px solid var(--bord); border-radius: 10px;
+    box-shadow: 0 6px 24px rgba(10, 30, 45, 0.18); backdrop-filter: blur(6px); }
+  #entete { position: fixed; top: 12px; left: 12px; max-width: min(360px, calc(100vw - 24px)); padding: 12px 14px; }
+  #entete h1 { margin: 0; font-size: 16px; color: var(--bleu-fonce); line-height: 1.25; }
+  :root[data-theme="dark"] #entete h1 { color: var(--creme); }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) #entete h1 { color: var(--creme); } }
+  #entete .sous { color: var(--doux); margin-top: 4px; font-size: 13px; }
+  #entete details { margin-top: 8px; }
+  #entete .note { margin-top: 8px; font-size: 12px; color: #7A4B12; background: #FBEFD9; border-radius: 6px; padding: 5px 8px; }
+  #entete summary { cursor: pointer; color: var(--bleu); font-size: 13px; }
+  #entete ul { margin: 6px 0 0; padding-left: 18px; color: var(--doux); font-size: 12px; line-height: 1.45; }
+  .pastilles { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .pastille { background: var(--bleu-fonce); color: #fff; border-radius: 999px; padding: 2px 9px; font-size: 12px; }
+  #outils { position: fixed; top: 12px; right: 12px; display: flex; flex-direction: column; gap: 8px;
+    align-items: flex-end; max-width: calc(100vw - 24px); }
+  .groupe { display: flex; padding: 3px; gap: 2px; flex-wrap: wrap; justify-content: flex-end; }
+  .groupe button { border: 0; background: transparent; color: var(--texte); padding: 7px 10px;
+    border-radius: 7px; cursor: pointer; font: inherit; font-size: 13px; white-space: nowrap; }
+  .groupe button:hover { background: rgba(55, 125, 160, 0.12); }
+  .groupe button.actif { background: var(--actif); color: var(--actif-texte); }
+  .groupe .titre { align-self: center; color: var(--doux); font-size: 12px; padding: 0 6px; }
+  #calques { position: fixed; left: 12px; bottom: 12px; padding: 10px 12px; max-width: min(340px, calc(100vw - 24px)); }
+  #calques label { display: flex; align-items: center; gap: 7px; margin: 3px 0; cursor: pointer; font-size: 13px; }
+  #calques input[type=checkbox] { accent-color: var(--bleu); }
+  #calques .ligne { display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 13px; }
+  #calques input[type=range] { flex: 1; accent-color: var(--bleu); }
+  #calques select { font: inherit; font-size: 13px; background: transparent; color: var(--texte);
+    border: 1px solid var(--bord); border-radius: 6px; padding: 2px 4px; }
+  #aide { position: fixed; bottom: 12px; right: 12px; padding: 9px 12px; font-size: 12px; color: var(--doux);
+    max-width: min(320px, calc(100vw - 24px)); line-height: 1.5; }
+  #aide b { color: var(--texte); }
+  #info { position: fixed; left: 50%; top: 14px; transform: translateX(-50%); padding: 10px 14px; display: none;
+    max-width: min(340px, calc(100vw - 24px)); font-size: 13px; line-height: 1.45; }
+  #info .fermer { float: right; cursor: pointer; color: var(--doux); margin-left: 10px; }
+  #chargement { position: fixed; inset: 0; display: grid; place-items: center; background: var(--fond); z-index: 10; }
+  #chargement .boite { text-align: center; color: var(--doux); }
+  #chargement .barre { width: 220px; height: 4px; background: var(--bord); border-radius: 4px; margin: 12px auto 0; overflow: hidden; }
+  #chargement .barre div { height: 100%; width: 0; background: var(--bleu); transition: width .2s; }
+  .etiquette { background: var(--bleu-fonce); color: #fff; padding: 2px 7px; border-radius: 5px; font-size: 12px;
+    white-space: nowrap; pointer-events: none; box-shadow: 0 2px 6px rgba(0,0,0,.25); }
+  .etiquette.adresse { background: var(--bleu); }
+  .etiquette.mesure { background: #fff; color: var(--bleu-fonce); border: 1px solid var(--bleu); }
+  #manette { position: fixed; left: 24px; bottom: 150px; width: 120px; height: 120px; border-radius: 50%;
+    background: rgba(23, 58, 82, 0.25); border: 2px solid rgba(255,255,255,0.5); display: none; touch-action: none; }
+  #manette div { position: absolute; left: 35px; top: 35px; width: 50px; height: 50px; border-radius: 50%;
+    background: rgba(255,255,255,0.75); }
+  #altitude { position: fixed; right: 24px; bottom: 150px; display: none; flex-direction: column; gap: 10px; }
+  #altitude button { width: 52px; height: 52px; border-radius: 50%; border: 0; background: rgba(23,58,82,0.7);
+    color: #fff; font-size: 20px; }
+  @media (max-width: 700px) {
+    #entete { padding: 9px 11px; } #entete h1 { font-size: 14px; }
+    #aide { display: none; }
+    #calques { bottom: 8px; left: 8px; right: 8px; max-width: none; }
+    #outils { top: auto; bottom: 150px; right: 8px; }
+  }
+</style>
+</head>
+<body>
+<div id="vue"></div>
+<div id="chargement"><div class="boite">Chargement de la maquette…<div class="barre"><div id="progression"></div></div></div></div>
+
+<div id="entete" class="carte">
+  <h1 id="titre"></h1>
+  <div class="sous" id="adresse"></div>
+  <div class="pastilles" id="parcelles"></div>
+  <div class="note" id="note-projet" hidden></div>
+  <details>
+    <summary>Sources et limites</summary>
+    <ul id="avertissements"></ul>
+    <ul id="sources"></ul>
+  </details>
+</div>
+
+<div id="outils">
+  <div class="groupe carte" id="modes">
+    <button data-mode="orbite" class="actif" title="Tourner autour du site">Tourner</button>
+    <button data-mode="libre" title="Se déplacer librement">Caméra libre</button>
+    <button data-mode="pieton" title="Marcher au niveau du sol">Piéton</button>
+  </div>
+  <div class="groupe carte" id="vues">
+    <span class="titre">Vue</span>
+    <button data-vue="aerienne">Aérienne</button>
+    <button data-vue="rue">Rue</button>
+    <button data-vue="dessus">Dessus</button>
+  </div>
+  <div class="groupe carte" id="presentation" hidden>
+    <button data-pres="existant">Existant</button>
+    <button data-pres="projet">Projet</button>
+    <button data-pres="les-deux">Les deux</button>
+  </div>
+  <div class="groupe carte">
+    <button id="mesurer" title="Cliquer deux points">Mesurer</button>
+  </div>
+</div>
+
+<div id="calques" class="carte">
+  <label><input type="checkbox" data-calque="contexte" checked> Bâtiments voisins</label>
+  <label><input type="checkbox" data-calque="vegetation" checked> Arbres</label>
+  <label><input type="checkbox" data-calque="limites" checked> Limites du site</label>
+  <label><input type="checkbox" id="etiquettes" checked> Étiquettes</label>
+  <div class="ligne">Soleil
+    <select id="saison"><option value="172">21 juin</option><option value="80">21 mars</option><option value="355">21 déc.</option></select>
+    <input type="range" id="heure" min="6" max="21" step="0.25" value="15"><span id="heure-texte">15 h</span>
+  </div>
+  <label><input type="checkbox" id="ombres" checked> Ombres portées</label>
+</div>
+
+<div id="aide" class="carte"></div>
+<div id="info" class="carte"><span class="fermer" id="fermer-info">✕</span><div id="info-texte"></div></div>
+<div id="manette"><div></div></div>
+<div id="altitude"><button id="monter">▲</button><button id="descendre">▼</button></div>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+} }
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+
+const INFOS = /*INFOS*/null;
+const MODELE = 'maquette.glb';
+// Repère local (x est, y nord, z haut) → three.js (y haut).
+const V = (x, y, z) => new THREE.Vector3(x, z, -y);
+const tactile = matchMedia('(pointer: coarse)').matches;
+// ?qualite=basse : sans ombres ni sur-échantillonnage (téléphones modestes).
+const basse = new URLSearchParams(location.search).get('qualite') === 'basse';
+const $ = (s) => document.querySelector(s);
+
+// En-tête -------------------------------------------------------------------------------
+$('#titre').textContent = INFOS.nom;
+document.title = INFOS.nom;
+$('#adresse').textContent = `${INFOS.adresse ?? ''} · ${INFOS.surface_cadastrale.toLocaleString('fr-FR')} m² cadastraux`;
+for (const p of INFOS.parcelles) {
+  const s = document.createElement('span'); s.className = 'pastille';
+  s.textContent = `${p.libelle} · ${p.contenance?.toLocaleString('fr-FR') ?? '?'} m²`;
+  $('#parcelles').append(s);
+}
+for (const a of INFOS.avertissements) { const li = document.createElement('li'); li.textContent = a; $('#avertissements').append(li); }
+for (const a of [...INFOS.sources, `Maquette générée le ${new Date(INFOS.date).toLocaleDateString('fr-FR')}`]) {
+  const li = document.createElement('li'); li.textContent = a; $('#sources').append(li);
+}
+
+// Rendu ---------------------------------------------------------------------------------
+const conteneur = $('#vue');
+const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+renderer.setPixelRatio(basse ? 1 : Math.min(devicePixelRatio, tactile ? 1.5 : 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.AgXToneMapping;
+renderer.toneMappingExposure = 1.1;
+renderer.shadowMap.enabled = !basse;
+$('#ombres').checked = !basse;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+conteneur.append(renderer.domElement);
+const etiquettes = new CSS2DRenderer();
+etiquettes.setSize(innerWidth, innerHeight);
+Object.assign(etiquettes.domElement.style, { position: 'fixed', inset: '0', pointerEvents: 'none' });
+document.body.append(etiquettes.domElement);
+
+const scene = new THREE.Scene();
+const ciel = new THREE.Color('#BFD3E2');
+scene.background = ciel;
+scene.fog = new THREE.Fog(ciel, 450, 1400);
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+scene.environmentIntensity = 0.55;
+
+const camera = new THREE.PerspectiveCamera(50, innerWidth / innerHeight, 0.1, 4000);
+const hemi = new THREE.HemisphereLight('#DCE8F2', '#8A7F6E', 0.9);
+scene.add(hemi);
+const soleil = new THREE.DirectionalLight('#FFF4E2', 2.6);
+soleil.castShadow = true;
+soleil.shadow.mapSize.set(tactile ? 2048 : 4096, tactile ? 2048 : 4096);
+const portee = 140;
+Object.assign(soleil.shadow.camera, { left: -portee, right: portee, top: portee, bottom: -portee, near: 1, far: 900 });
+soleil.shadow.bias = -0.0004;
+soleil.shadow.normalBias = 0.04;
+scene.add(soleil, soleil.target);
+
+const [cx, cy, cz] = INFOS.centre_site;
+const centre = V(cx, cy, cz);
+soleil.target.position.copy(centre);
+
+// Soleil : position astronomique (latitude du site, heure légale française).
+const LAT = 48.97 * Math.PI / 180;
+function placerSoleil() {
+  const jour = +$('#saison').value, h = +$('#heure').value;
+  $('#heure-texte').textContent = `${Math.floor(h)} h ${h % 1 ? String(Math.round(h % 1 * 60)).padStart(2, '0') : ''}`.trim();
+  const decalage = jour > 86 && jour < 300 ? 2 : 1;
+  const solaire = h - decalage + 2 / 15;
+  const H = (solaire - 12) * 15 * Math.PI / 180;
+  const decl = 23.44 * Math.PI / 180 * Math.sin(2 * Math.PI * (284 + jour) / 365);
+  const el = Math.asin(Math.sin(LAT) * Math.sin(decl) + Math.cos(LAT) * Math.cos(decl) * Math.cos(H));
+  let az = Math.acos(Math.min(1, Math.max(-1, (Math.sin(decl) - Math.sin(el) * Math.sin(LAT)) / (Math.cos(el) * Math.cos(LAT)))));
+  if (H > 0) az = 2 * Math.PI - az;
+  const elv = Math.max(el, 0.02);
+  const d = V(Math.sin(az) * Math.cos(elv), Math.cos(az) * Math.cos(elv), Math.sin(elv));
+  soleil.position.copy(centre).addScaledVector(d, 400);
+  soleil.intensity = el > 0 ? 2.6 * Math.min(1, el / 0.25 + 0.15) : 0.05;
+  hemi.intensity = el > 0 ? 0.9 : 0.35;
+}
+$('#saison').onchange = placerSoleil; $('#heure').oninput = placerSoleil;
+$('#ombres').onchange = (e) => { renderer.shadowMap.enabled = e.target.checked; scene.traverse((o) => { if (o.material) o.material.needsUpdate = true; }); };
+placerSoleil();
+
+// Modèle --------------------------------------------------------------------------------
+const calques = {};
+const surfacesSol = [];
+const selectionnables = [];
+const chargeur = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder);
+const DECALAGES = { asphalte: -2, trottoir: -2, chemin: -2, marquage: -4, limite_site: -6, eau: -2 };
+chargeur.load(MODELE, (gltf) => {
+  const racine = gltf.scene;
+  racine.traverse((o) => {
+    if (!o.isMesh) return;
+    o.castShadow = true; o.receiveShadow = true;
+    const mats = Array.isArray(o.material) ? o.material : [o.material];
+    for (const m of mats) {
+      const cle = Object.keys(DECALAGES).find((k) => m.name.startsWith(k));
+      if (cle) { m.polygonOffset = true; m.polygonOffsetFactor = DECALAGES[cle]; m.polygonOffsetUnits = DECALAGES[cle]; }
+      if (m.name.startsWith('voile_site')) { m.depthWrite = false; o.castShadow = false; }
+      if (m.name.startsWith('verre_garde')) { m.depthWrite = false; }
+      if (m.name.startsWith('ortho') || m.name.startsWith('socle')) o.castShadow = m.name.startsWith('socle') ? false : o.castShadow;
+      if (m.map) m.map.anisotropy = renderer.capabilities.getMaxAnisotropy();
+    }
+  });
+  for (const noeud of [...racine.children]) {
+    const calque = noeud.userData.calque ?? 'contexte';
+    (calques[calque] ??= []).push(noeud);
+    if (calque === 'terrain' || calque === 'voirie') noeud.traverse((o) => o.isMesh && surfacesSol.push(o));
+    if (calque === 'existant' || calque === 'projet') {
+      noeud.traverse((o) => { if (o.isMesh) { o.userData.batiment = noeud; selectionnables.push(o); } });
+    }
+  }
+  scene.add(racine);
+  if (calques.projet) $('#presentation').hidden = false;
+  presenter(INFOS.presentation);
+  ajouterEtiquettes();
+  allerA('aerienne', false);
+  $('#chargement').remove();
+}, (e) => { if (e.total) $('#progression').style.width = `${(100 * e.loaded / e.total).toFixed(0)}%`; },
+(err) => { $('#chargement .boite').textContent = 'Impossible de charger la maquette.'; console.error(err); });
+
+function voir(calque, visible) { for (const n of calques[calque] ?? []) n.visible = visible; }
+for (const c of document.querySelectorAll('[data-calque]')) c.onchange = (e) => voir(e.target.dataset.calque, e.target.checked);
+
+function presenter(mode) {
+  const p = INFOS.projet;
+  $('#note-projet').hidden = !(p && mode !== 'existant');
+  if (p) $('#note-projet').textContent = `Projet : ${p.nom}${p.indicatif ? ' — volume indicatif, pas un programme étudié' : ''}`;
+  for (const b of document.querySelectorAll('[data-pres]')) b.classList.toggle('actif', b.dataset.pres === mode);
+  const demolition = INFOS.projet?.demolition ?? true;
+  voir('existant', mode === 'existant' || (mode === 'les-deux') || !demolition);
+  voir('projet', mode !== 'existant');
+  for (const n of calques.existant ?? []) n.traverse((o) => {
+    if (!o.isMesh) return;
+    for (const m of Array.isArray(o.material) ? o.material : [o.material]) {
+      m.userData.opacite ??= m.opacity; m.userData.transparent ??= m.transparent;
+      const fantome = mode === 'les-deux' && calques.projet;
+      m.transparent = fantome ? true : m.userData.transparent;
+      m.opacity = fantome ? 0.28 : m.userData.opacite;
+      m.depthWrite = !fantome;
+    }
+  });
+}
+for (const b of document.querySelectorAll('[data-pres]')) b.onclick = () => presenter(b.dataset.pres);
+
+// Étiquettes ----------------------------------------------------------------------------
+const objetsEtiquettes = [];
+function etiquette(texte, position, classe = '') {
+  const div = document.createElement('div'); div.className = `etiquette ${classe}`; div.textContent = texte;
+  const o = new CSS2DObject(div); o.position.copy(position); scene.add(o); objetsEtiquettes.push(o); return o;
+}
+function ajouterEtiquettes() {
+  for (const p of INFOS.parcelles) etiquette(p.libelle, V(p.centre[0], p.centre[1], p.centre[2] + 2.5));
+  if (INFOS.adresse_locale) {
+    const [ax, ay, az] = INFOS.adresse_locale;
+    etiquette(INFOS.adresse.split(',')[0], V(ax, ay, az + 5), 'adresse');
+  }
+}
+$('#etiquettes').onchange = (e) => objetsEtiquettes.forEach((o) => { o.visible = e.target.checked; });
+
+// Contrôles -----------------------------------------------------------------------------
+const orbite = new OrbitControls(camera, renderer.domElement);
+orbite.enableDamping = true; orbite.dampingFactor = 0.08;
+orbite.maxPolarAngle = Math.PI / 2 - 0.03; orbite.minDistance = 4; orbite.maxDistance = 900;
+orbite.target.copy(centre);
+let mode = 'orbite';
+const touches = new Set();
+let lacet = 0, tangage = 0, vitesse = 12;
+const AIDES = {
+  orbite: tactile ? '<b>Un doigt</b> : tourner · <b>deux doigts</b> : zoomer, déplacer · <b>toucher un bâtiment du site</b> : ses mesures'
+    : '<b>Clic gauche</b> : tourner · <b>clic droit</b> : déplacer · <b>molette</b> : zoomer · <b>clic sur un bâtiment du site</b> : ses mesures',
+  libre: tactile ? '<b>Glisser</b> : regarder · <b>manette</b> : avancer · <b>▲ ▼</b> : monter, descendre'
+    : '<b>Glisser</b> : regarder · <b>Z Q S D</b> ou <b>flèches</b> : se déplacer · <b>A / E</b> : descendre, monter · <b>molette</b> : vitesse · <b>Maj</b> : rapide',
+  pieton: tactile ? '<b>Glisser</b> : regarder · <b>manette</b> : marcher (à 1,65 m du sol)'
+    : '<b>Glisser</b> : regarder · <b>Z Q S D</b> ou <b>flèches</b> : marcher (yeux à 1,65 m) · <b>Maj</b> : courir',
+};
+function changerMode(m, garderCible = false) {
+  const precedent = mode;
+  mode = m;
+  for (const b of document.querySelectorAll('[data-mode]')) b.classList.toggle('actif', b.dataset.mode === m);
+  orbite.enabled = m === 'orbite';
+  const dir = new THREE.Vector3(); camera.getWorldDirection(dir);
+  lacet = Math.atan2(-dir.x, -dir.z); tangage = Math.asin(THREE.MathUtils.clamp(dir.y, -1, 1));
+  if (m === 'orbite' && precedent !== 'orbite' && !garderCible) orbite.target.copy(cibleDevant());
+  if (m === 'pieton') { vitesse = 4; tangage = Math.max(-0.3, Math.min(0.3, tangage)); }
+  if (m === 'libre') vitesse = 12;
+  $('#manette').style.display = tactile && m !== 'orbite' ? 'block' : 'none';
+  $('#altitude').style.display = tactile && m === 'libre' ? 'flex' : 'none';
+  $('#aide').innerHTML = AIDES[m];
+}
+for (const b of document.querySelectorAll('[data-mode]')) b.onclick = () => changerMode(b.dataset.mode);
+function cibleDevant() {
+  // Point du sol visé par la caméra (sinon 40 m devant elle).
+  const dir = new THREE.Vector3(); camera.getWorldDirection(dir);
+  lanceur.set(camera.position, dir);
+  const hit = lanceur.intersectObjects(surfacesSol, false)[0];
+  return hit ? hit.point : camera.position.clone().addScaledVector(dir, 40);
+}
+const lanceur = new THREE.Raycaster();
+function solSous(p) {
+  lanceur.set(new THREE.Vector3(p.x, 2000, p.z), new THREE.Vector3(0, -1, 0));
+  const hit = lanceur.intersectObjects(surfacesSol, false)[0];
+  return hit ? hit.point : null;
+}
+addEventListener('keydown', (e) => { if (e.target.tagName !== 'INPUT' && e.target.tagName !== 'SELECT') touches.add(e.code); });
+addEventListener('keyup', (e) => touches.delete(e.code));
+addEventListener('blur', () => touches.clear());
+renderer.domElement.addEventListener('wheel', (e) => {
+  if (mode === 'orbite') return;
+  vitesse = THREE.MathUtils.clamp(vitesse * (e.deltaY > 0 ? 0.85 : 1.18), 1, 120); e.preventDefault();
+}, { passive: false });
+
+// Regarder en glissant (souris ou doigt), hors manette.
+let glisse = null, deplace = 0;
+renderer.domElement.addEventListener('pointerdown', (e) => { glisse = { x: e.clientX, y: e.clientY, id: e.pointerId }; deplace = 0; });
+addEventListener('pointermove', (e) => {
+  if (!glisse || e.pointerId !== glisse.id) return;
+  const dx = e.clientX - glisse.x, dy = e.clientY - glisse.y;
+  deplace += Math.abs(dx) + Math.abs(dy);
+  glisse.x = e.clientX; glisse.y = e.clientY;
+  if (mode === 'orbite') return;
+  lacet -= dx * 0.004; tangage = THREE.MathUtils.clamp(tangage - dy * 0.004, -1.5, 1.5);
+});
+addEventListener('pointerup', (e) => { if (glisse && e.pointerId === glisse.id) { if (deplace < 6) cliquer(e); glisse = null; } });
+
+// Manette tactile.
+const manette = { x: 0, y: 0 };
+const zone = $('#manette'), bouton = zone.firstElementChild;
+zone.addEventListener('pointerdown', (e) => { zone.setPointerCapture(e.pointerId); bougerManette(e); e.stopPropagation(); });
+zone.addEventListener('pointermove', (e) => { if (zone.hasPointerCapture(e.pointerId)) bougerManette(e); });
+zone.addEventListener('pointerup', () => { manette.x = manette.y = 0; bouton.style.transform = ''; });
+function bougerManette(e) {
+  const r = zone.getBoundingClientRect();
+  let x = (e.clientX - r.left - r.width / 2) / (r.width / 2), y = (e.clientY - r.top - r.height / 2) / (r.height / 2);
+  const n = Math.hypot(x, y); if (n > 1) { x /= n; y /= n; }
+  manette.x = x; manette.y = y; bouton.style.transform = `translate(${x * 35}px, ${y * 35}px)`;
+}
+let vertical = 0;
+for (const [id, v] of [['#monter', 1], ['#descendre', -1]]) {
+  $(id).addEventListener('pointerdown', () => { vertical = v; });
+  $(id).addEventListener('pointerup', () => { vertical = 0; });
+  $(id).addEventListener('pointerleave', () => { vertical = 0; });
+}
+
+function deplacer(dt) {
+  const avant = (touches.has('KeyW') || touches.has('ArrowUp') ? 1 : 0) - (touches.has('KeyS') || touches.has('ArrowDown') ? 1 : 0) - manette.y;
+  const cote = (touches.has('KeyD') || touches.has('ArrowRight') ? 1 : 0) - (touches.has('KeyA') || touches.has('ArrowLeft') ? 1 : 0) + manette.x;
+  const haut = (touches.has('KeyE') || touches.has('Space') ? 1 : 0) - (touches.has('KeyQ') || touches.has('ControlLeft') ? 1 : 0) + vertical;
+  const v = vitesse * (touches.has('ShiftLeft') || touches.has('ShiftRight') ? 3 : 1) * dt;
+  const f = new THREE.Vector3(-Math.sin(lacet), 0, -Math.cos(lacet));
+  const d = new THREE.Vector3(Math.cos(lacet), 0, -Math.sin(lacet));
+  if (mode === 'libre') {
+    const regard = new THREE.Vector3(-Math.sin(lacet) * Math.cos(tangage), Math.sin(tangage), -Math.cos(lacet) * Math.cos(tangage));
+    camera.position.addScaledVector(regard, avant * v).addScaledVector(d, cote * v);
+    camera.position.y += haut * v;
+  } else {
+    camera.position.addScaledVector(f, avant * v).addScaledVector(d, cote * v);
+    const sol = solSous(camera.position);
+    if (sol) camera.position.y += (sol.y + 1.65 - camera.position.y) * Math.min(1, dt * 10);
+  }
+  const regard = new THREE.Vector3(-Math.sin(lacet) * Math.cos(tangage), Math.sin(tangage), -Math.cos(lacet) * Math.cos(tangage));
+  camera.lookAt(camera.position.clone().add(regard));
+}
+
+// Vues prédéfinies.
+function allerA(vue, transition = true) {
+  let position, cible = centre.clone().add(new THREE.Vector3(0, 3, 0));
+  if (vue === 'aerienne') position = V(cx - 75, cy - 95, cz + 80);
+  else if (vue === 'dessus') position = V(cx, cy - 0.5, cz + 220);
+  else if (INFOS.vue_rue) {
+    position = V(...INFOS.vue_rue.position);
+    cible = V(...INFOS.vue_rue.cible);
+  } else {
+    const [ax, ay, az] = INFOS.adresse_locale ?? [cx + 30, cy - 30, cz];
+    position = V(ax, ay - 15, az + 1.65);
+    const sol = solSous(position); if (sol) position.y = sol.y + 1.65;
+  }
+  if (vue === 'rue') changerMode('pieton'); else if (mode !== 'orbite') changerMode('orbite', true);
+  const depart = camera.position.clone(), departCible = orbite.target.clone();
+  const t0 = performance.now(), duree = transition ? 900 : 0;
+  function pas() {
+    const t = duree ? Math.min(1, (performance.now() - t0) / duree) : 1, e = t * t * (3 - 2 * t);
+    camera.position.lerpVectors(depart, position, e);
+    if (mode === 'orbite') { orbite.target.lerpVectors(departCible, cible, e); camera.lookAt(orbite.target); }
+    else camera.lookAt(cible);
+    if (t < 1) requestAnimationFrame(pas); else changerMode(mode, true);
+  }
+  pas();
+}
+for (const b of document.querySelectorAll('[data-vue]')) b.onclick = () => allerA(b.dataset.vue);
+
+// Sélection et mesure -----------------------------------------------------------------
+const pointeur = new THREE.Vector2();
+let mesure = null;
+$('#mesurer').onclick = () => {
+  mesure = mesure ? null : { points: [] };
+  $('#mesurer').classList.toggle('actif', !!mesure);
+  $('#mesurer').textContent = mesure ? 'Cliquer 2 points…' : 'Mesurer';
+};
+const traits = [];
+function cliquer(e) {
+  pointeur.set(e.clientX / innerWidth * 2 - 1, -e.clientY / innerHeight * 2 + 1);
+  lanceur.setFromCamera(pointeur, camera);
+  if (mesure) {
+    const visibles = []; scene.traverseVisible((o) => { if (o.isMesh && !o.material.name?.startsWith('voile')) visibles.push(o); });
+    const hit = lanceur.intersectObjects(visibles, false)[0];
+    if (!hit) return;
+    mesure.points.push(hit.point.clone());
+    const p = new THREE.Mesh(new THREE.SphereGeometry(0.25), new THREE.MeshBasicMaterial({ color: '#377DA0' }));
+    p.position.copy(hit.point); scene.add(p); traits.push(p);
+    if (mesure.points.length === 2) {
+      const [a, b] = mesure.points;
+      const ligne = new THREE.Line(new THREE.BufferGeometry().setFromPoints([a, b]), new THREE.LineBasicMaterial({ color: '#173A52', depthTest: false }));
+      ligne.renderOrder = 10; scene.add(ligne); traits.push(ligne);
+      const horiz = Math.hypot(b.x - a.x, b.z - a.z), dz = b.y - a.y;
+      traits.push(etiquette(`${a.distanceTo(b).toFixed(1)} m · horiz. ${horiz.toFixed(1)} m · Δh ${dz >= 0 ? '+' : ''}${dz.toFixed(1)} m`,
+        a.clone().add(b).multiplyScalar(0.5), 'mesure'));
+      mesure = { points: [] };
+    }
+    return;
+  }
+  const hit = lanceur.intersectObjects(selectionnables.filter((o) => o.userData.batiment.visible), false)[0];
+  if (!hit) { $('#info').style.display = 'none'; return; }
+  const infos = JSON.parse(hit.object.userData.batiment.userData.infos ?? '{}');
+  const lignes = [
+    `<b>${infos.calque === 'projet' ? 'Projet' : 'Bâtiment existant'}</b> · ${infos.usage ?? ''}`,
+    `Emprise : ${infos.surface_emprise ?? '?'} m²`,
+    `Hauteur à l'égout : ${infos.hauteur_gouttiere ?? '?'} m${infos.hauteur_faitage ? ` · au faîtage : ${infos.hauteur_faitage} m` : ''}`,
+    `Niveaux : ${infos.etages ?? '?'} · toiture : ${(infos.toiture ?? '').replace('_', ' ')}`,
+    infos.hauteur_source ? `Hauteur mesurée par : ${{ lidar: 'LiDAR HD', bdtopo: 'BD TOPO', etages: 'nombre d’étages', defaut: 'valeur par défaut' }[infos.hauteur_source]}` : '',
+  ].filter(Boolean);
+  $('#info-texte').innerHTML = lignes.join('<br>');
+  $('#info').style.display = 'block';
+}
+$('#fermer-info').onclick = () => { $('#info').style.display = 'none'; };
+addEventListener('keydown', (e) => { if (e.code === 'Escape') { for (const t of traits.splice(0)) { scene.remove(t); t.element?.remove(); } mesure = null; $('#mesurer').classList.remove('actif'); $('#mesurer').textContent = 'Mesurer'; } });
+
+// Boucle --------------------------------------------------------------------------------
+changerMode('orbite');
+const horloge = new THREE.Clock();
+renderer.setAnimationLoop(() => {
+  const dt = Math.min(horloge.getDelta(), 0.1);
+  if (mode === 'orbite') orbite.update(); else deplacer(dt);
+  renderer.render(scene, camera);
+  etiquettes.render(scene, camera);
+});
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight); etiquettes.setSize(innerWidth, innerHeight);
+});
+</script>
+</body>
+</html>

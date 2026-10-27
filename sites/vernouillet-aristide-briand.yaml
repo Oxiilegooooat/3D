@@ -1,0 +1,27 @@
+nom: Vernouillet — 54 rue Aristide Briand
+adresse: 54 rue Aristide Briand, 78540 Vernouillet
+insee: "78643"
+parcelles: [AE0003, AO0404, AO0406]
+
+# Calques à présenter : existant, projet, ou les deux (choix au cas par cas).
+presentation: existant
+
+# Projet : aucun programme communiqué pour ce site. Le volume ci-dessous est un EXEMPLE
+# fictif (indicatif: true) qui montre le mode « projet » ; le remplacer par le programme réel
+# (emprise en Lambert 93, niveaux, toiture) ou par le modèle de l'architecte (`modele`).
+projet:
+  nom: Exemple de volume (fictif)
+  indicatif: true
+  demolition: true        # le bâti existant du site disparaît en mode « projet »
+  volumes:
+    - nom: Bâtiment sur rue
+      emprise: [[625338.63, 6875034.95], [625357.06, 6875051.7], [625348.31, 6875061.32], [625329.89, 6875044.57]]
+      niveaux: 4          # RDC + 2 étages + attique en retrait
+      attique: true
+      toiture: terrasse
+      balcons: true
+    - nom: Bâtiment en fond de parcelle
+      emprise: [[625310.38, 6875066.03], [625328.8, 6875082.78], [625320.73, 6875091.66], [625302.31, 6875074.91]]
+      niveaux: 2
+      toiture: deux_pans
+      balcons: false
