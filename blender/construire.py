@@ -90,7 +90,6 @@ def materiau(nom, d):
 
 
 materiaux = {n: materiau(n, d) for n, d in scene_json["materiaux"].items()}
-lisses = {n for n, d in scene_json["materiaux"].items() if d["lisse"]}
 
 collections = {}
 
@@ -114,7 +113,7 @@ for o in scene_json["objets"]:
         faces.append(f + decalage)
         uvs.append(donnees[part["cle"] + "_uv"])
         mats.append(np.full(len(f), i, dtype=np.int32))
-        lisse.append(np.full(len(f), part["materiau"] in lisses))
+        lisse.append(np.full(len(f), part["lisse"]))
         noms_mat.append(part["materiau"])
         decalage += len(v)
     v = np.concatenate(sommets)

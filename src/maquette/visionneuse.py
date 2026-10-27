@@ -11,41 +11,31 @@ from maquette.config import RACINE
 
 GABARIT = RACINE / "visionneuse" / "index.html"
 GLTFPACK = "gltfpack@0.24.0"
+TAILLE_MAX = 14_000_000  # octets : au-delà, compression meshopt (décodeur WebAssembly)
 
 
-def compresser(glb: Path) -> bool:
-    """Compression meshopt (gltfpack) : noms, matériaux et métadonnées conservés.
-    Sans Node.js, le GLB reste tel quel (la visionneuse lit les deux)."""
+def compresser(glb: Path) -> str | None:
+    """Quantification des sommets (KHR_mesh_quantization, lue sans décodeur) ; compression
+    meshopt en plus si le fichier dépasse `TAILLE_MAX`. Noms, matériaux et métadonnées
+    conservés. Sans Node.js, le GLB reste tel quel."""
     if shutil.which("npx") is None:
-        return False
+        return None
     sortie = glb.with_suffix(".compresse.glb")
-    commande = [
-        "npx",
-        "--yes",
-        GLTFPACK,
-        "-i",
-        str(glb),
-        "-o",
-        str(sortie),
-        "-cc",
-        "-kn",
-        "-km",
-        "-ke",
-        "-vp",
-        "16",
-        "-vt",
-        "14",
-    ]
-    resultat = subprocess.run(commande, capture_output=True, text=True)
-    if resultat.returncode != 0 or not sortie.exists():
-        return False
-    sortie.replace(glb)
-    return True
+    base = ["npx", "--yes", GLTFPACK, "-i", str(glb), "-o", str(sortie), "-kn", "-km", "-ke"]
+    base += ["-vp", "16", "-vt", "14"]
+    for mode, options in (("quantification", []), ("meshopt", ["-cc"])):
+        resultat = subprocess.run(base + options, capture_output=True, text=True)
+        if resultat.returncode != 0 or not sortie.exists():
+            return None
+        if mode == "meshopt" or sortie.stat().st_size <= TAILLE_MAX:
+            sortie.replace(glb)
+            return mode
+    return None
 
 
 def ecrire(scene: Path, sortie: Path) -> Path:
     infos = json.loads((scene / "infos.json").read_text(encoding="utf-8"))
-    compresser(sortie / "maquette.glb")
+    infos["compression"] = compresser(sortie / "maquette.glb")
     page = GABARIT.read_text(encoding="utf-8").replace(
         "/*INFOS*/null", json.dumps(infos, ensure_ascii=False).replace("</", "<\\/")
     )

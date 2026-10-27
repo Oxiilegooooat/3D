@@ -13,13 +13,16 @@
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) {
       --fond: #0F1A22; --carte: rgba(20, 32, 41, 0.94); --texte: #E8EEF2; --doux: #9DB0BC;
-      --bord: rgba(237, 230, 214, 0.16);
+      --bord: rgba(237, 230, 214, 0.16); color-scheme: dark;
     }
   }
   :root[data-theme="dark"] {
     --fond: #0F1A22; --carte: rgba(20, 32, 41, 0.94); --texte: #E8EEF2; --doux: #9DB0BC;
-    --bord: rgba(237, 230, 214, 0.16);
+    --bord: rgba(237, 230, 214, 0.16); color-scheme: dark;
   }
+  /* Marges des écrans à encoche (application mobile). */
+  :root { --h: env(safe-area-inset-top, 0px); --b: env(safe-area-inset-bottom, 0px);
+    --g: env(safe-area-inset-left, 0px); --d: env(safe-area-inset-right, 0px); }
   * { box-sizing: border-box; }
   html, body { margin: 0; height: 100%; overflow: hidden; background: var(--fond); color: var(--texte);
     font-family: Arial, Helvetica, sans-serif; font-size: 14px; }
@@ -27,7 +30,7 @@
   #vue canvas { display: block; }
   .carte { background: var(--carte); border: 1px solid var(--bord); border-radius: 10px;
     box-shadow: 0 6px 24px rgba(10, 30, 45, 0.18); backdrop-filter: blur(6px); }
-  #entete { position: fixed; top: 12px; left: 12px; max-width: min(360px, calc(100vw - 24px)); padding: 12px 14px; }
+  #entete { position: fixed; top: calc(12px + var(--h)); left: calc(12px + var(--g)); max-width: min(360px, calc(100vw - 24px)); padding: 12px 14px; }
   #entete h1 { margin: 0; font-size: 16px; color: var(--bleu-fonce); line-height: 1.25; }
   :root[data-theme="dark"] #entete h1 { color: var(--creme); }
   @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) #entete h1 { color: var(--creme); } }
@@ -38,7 +41,7 @@
   #entete ul { margin: 6px 0 0; padding-left: 18px; color: var(--doux); font-size: 12px; line-height: 1.45; }
   .pastilles { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
   .pastille { background: var(--bleu-fonce); color: #fff; border-radius: 999px; padding: 2px 9px; font-size: 12px; }
-  #outils { position: fixed; top: 12px; right: 12px; display: flex; flex-direction: column; gap: 8px;
+  #outils { position: fixed; top: calc(12px + var(--h)); right: calc(12px + var(--d)); display: flex; flex-direction: column; gap: 8px;
     align-items: flex-end; max-width: calc(100vw - 24px); }
   .groupe { display: flex; padding: 3px; gap: 2px; flex-wrap: wrap; justify-content: flex-end; }
   .groupe button { border: 0; background: transparent; color: var(--texte); padding: 7px 10px;
@@ -46,17 +49,19 @@
   .groupe button:hover { background: rgba(55, 125, 160, 0.12); }
   .groupe button.actif { background: var(--actif); color: var(--actif-texte); }
   .groupe .titre { align-self: center; color: var(--doux); font-size: 12px; padding: 0 6px; }
-  #calques { position: fixed; left: 12px; bottom: 12px; padding: 10px 12px; max-width: min(340px, calc(100vw - 24px)); }
+  #calques { position: fixed; left: calc(12px + var(--g)); bottom: calc(12px + var(--b)); padding: 10px 12px; max-width: min(340px, calc(100vw - 24px)); }
+  #calques summary { cursor: pointer; color: var(--bleu); font-size: 13px; margin-bottom: 4px; }
+  #calques:not([open]) summary { margin-bottom: 0; }
   #calques label { display: flex; align-items: center; gap: 7px; margin: 3px 0; cursor: pointer; font-size: 13px; }
   #calques input[type=checkbox] { accent-color: var(--bleu); }
   #calques .ligne { display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 13px; }
   #calques input[type=range] { flex: 1; accent-color: var(--bleu); }
   #calques select { font: inherit; font-size: 13px; background: transparent; color: var(--texte);
     border: 1px solid var(--bord); border-radius: 6px; padding: 2px 4px; }
-  #aide { position: fixed; bottom: 12px; right: 12px; padding: 9px 12px; font-size: 12px; color: var(--doux);
+  #aide { position: fixed; bottom: calc(12px + var(--b)); right: calc(12px + var(--d)); padding: 9px 12px; font-size: 12px; color: var(--doux);
     max-width: min(320px, calc(100vw - 24px)); line-height: 1.5; }
   #aide b { color: var(--texte); }
-  #info { position: fixed; left: 50%; top: 14px; transform: translateX(-50%); padding: 10px 14px; display: none;
+  #info { position: fixed; left: 50%; top: calc(14px + var(--h)); transform: translateX(-50%); padding: 10px 14px; display: none;
     max-width: min(340px, calc(100vw - 24px)); font-size: 13px; line-height: 1.45; }
   #info .fermer { float: right; cursor: pointer; color: var(--doux); margin-left: 10px; }
   #chargement { position: fixed; inset: 0; display: grid; place-items: center; background: var(--fond); z-index: 10; }
@@ -77,8 +82,13 @@
   @media (max-width: 700px) {
     #entete { padding: 9px 11px; } #entete h1 { font-size: 14px; }
     #aide { display: none; }
-    #calques { bottom: 8px; left: 8px; right: 8px; max-width: none; }
-    #outils { top: auto; bottom: 150px; right: 8px; }
+    #calques { bottom: calc(8px + var(--b)); left: calc(8px + var(--g)); right: calc(8px + var(--d)); max-width: none; }
+    #outils { top: auto; bottom: calc(56px + var(--b)); right: calc(8px + var(--d)); }
+    #outils .groupe button { padding: 6px 8px; }
+    #entete { left: calc(8px + var(--g)); top: calc(8px + var(--h)); max-width: calc(100vw - 16px); }
+    #entete details { display: none; }
+    #manette { bottom: calc(64px + var(--b)); }
+    #altitude { bottom: calc(64px + var(--b)); right: auto; left: 160px; }
   }
 </style>
 </head>
@@ -120,7 +130,8 @@
   </div>
 </div>
 
-<div id="calques" class="carte">
+<details id="calques" class="carte" open>
+  <summary>Calques et soleil</summary>
   <label><input type="checkbox" data-calque="contexte" checked> Bâtiments voisins</label>
   <label><input type="checkbox" data-calque="vegetation" checked> Arbres</label>
   <label><input type="checkbox" data-calque="limites" checked> Limites du site</label>
@@ -130,7 +141,7 @@
     <input type="range" id="heure" min="6" max="21" step="0.25" value="15"><span id="heure-texte">15 h</span>
   </div>
   <label><input type="checkbox" id="ombres" checked> Ombres portées</label>
-</div>
+</details>
 
 <div id="aide" class="carte"></div>
 <div id="info" class="carte"><span class="fermer" id="fermer-info">✕</span><div id="info-texte"></div></div>
@@ -147,17 +158,19 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
 
 const INFOS = /*INFOS*/null;
-const MODELE = 'maquette.glb';
+// Nom du fichier publié à côté de la page (un hébergeur peut imposer une extension).
+const MODELE = INFOS.fichier_modele ?? 'maquette.glb';
 // Repère local (x est, y nord, z haut) → three.js (y haut).
 const V = (x, y, z) => new THREE.Vector3(x, z, -y);
 const tactile = matchMedia('(pointer: coarse)').matches;
 // ?qualite=basse : sans ombres ni sur-échantillonnage (téléphones modestes).
 const basse = new URLSearchParams(location.search).get('qualite') === 'basse';
+const etroit = innerWidth < 700;
+if (etroit) document.querySelector('#calques').open = false;
 const $ = (s) => document.querySelector(s);
 
 // En-tête -------------------------------------------------------------------------------
@@ -240,7 +253,11 @@ placerSoleil();
 const calques = {};
 const surfacesSol = [];
 const selectionnables = [];
-const chargeur = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder);
+const chargeur = new GLTFLoader();
+// Décodeur WebAssembly chargé seulement pour un GLB compressé en meshopt.
+if (INFOS.compression === 'meshopt') {
+  chargeur.setMeshoptDecoder((await import('three/addons/libs/meshopt_decoder.module.js')).MeshoptDecoder);
+}
 const DECALAGES = { asphalte: -2, trottoir: -2, chemin: -2, marquage: -4, limite_site: -6, eau: -2 };
 chargeur.load(MODELE, (gltf) => {
   const racine = gltf.scene;
@@ -420,7 +437,8 @@ function deplacer(dt) {
 // Vues prédéfinies.
 function allerA(vue, transition = true) {
   let position, cible = centre.clone().add(new THREE.Vector3(0, 3, 0));
-  if (vue === 'aerienne') position = V(cx - 75, cy - 95, cz + 80);
+  const recul = camera.aspect < 1 ? 1.7 : 1;
+  if (vue === 'aerienne') position = V(cx - 75 * recul, cy - 95 * recul, cz + 80 * recul);
   else if (vue === 'dessus') position = V(cx, cy - 0.5, cz + 220);
   else if (INFOS.vue_rue) {
     position = V(...INFOS.vue_rue.position);

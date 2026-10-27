@@ -48,6 +48,10 @@ class Objet:
     calque: str
     parts: dict[str, list[Maillage]] = field(default_factory=lambda: defaultdict(list))
     infos: dict[str, Any] = field(default_factory=dict)
+    # Parties à sommets partagés (ombrage lisse) : surfaces continues, GLB bien plus léger.
+    lisses: set[str] = field(
+        default_factory=lambda: {"sous_toiture", "trottoir", "asphalte", "chemin", "eau"}
+    )
 
     def ajouter(self, morceaux: dict[str, list[Maillage]]) -> None:
         for mat, liste in morceaux.items():
@@ -174,7 +178,7 @@ def construire(site: Site, cfg: dict[str, Any], dossier: Path, force: bool = Fal
     ortho.save(textures / "ortho.jpg", quality=86)
 
     objets: list[Objet] = []
-    sol = Objet("terrain", "terrain")
+    sol = Objet("terrain", "terrain", lisses={"ortho"})
     sol.parts["ortho"].append(terrain.maillage())
     sol.parts["socle"].append(terrain.socle(cc["epaisseur_socle"]))
     objets.append(sol)
@@ -316,7 +320,8 @@ def construire(site: Site, cfg: dict[str, Any], dossier: Path, force: bool = Fal
             tableaux[f"{cle}_v"] = m.sommets.astype(np.float32)
             tableaux[f"{cle}_f"] = m.faces.astype(np.int32)
             tableaux[f"{cle}_uv"] = m.uv.astype(np.float32)
-            parts.append({"materiau": mat, "cle": cle, "triangles": len(m)})
+            lisse = mat in o.lisses or materiaux[mat].lisse
+            parts.append({"materiau": mat, "cle": cle, "triangles": len(m), "lisse": lisse})
         if parts:
             description.append({"nom": o.nom, "calque": o.calque, "parts": parts, "infos": o.infos})
     np.savez_compressed(sortie / "maillages.npz", allow_pickle=False, **tableaux)
